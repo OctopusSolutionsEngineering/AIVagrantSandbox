@@ -24,6 +24,12 @@ Vagrant.configure("2") do |config|
     mount_options: ["share", "rw"]
   end
 
+  config.vm.provider "hyperv" do |prl, override|
+    override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
+    type: nil,
+    mount_options: ["share", "rw"]
+  end
+
   config.vm.provider "parallels" do |prl|
     prl.memory = 4096
     prl.cpus   = 6
