@@ -30,8 +30,8 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider "hyperv" do |hv, override|
     override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
-    type: nil,
-    mount_options: ["share", "rw"]
+    type: "smb",
+    mount_options: ["rw", "uid=#{AGENT_UID}", "gid=#{AGENT_UID}", "mfsymlinks"]
   end
 
   config.vm.provider "parallels" do |prl|
