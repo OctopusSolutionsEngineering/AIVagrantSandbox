@@ -44,4 +44,4 @@ cd ~/Code/AIVagrantSandbox || exit 1
 
 echo "Project Directory: $start_rel_q"
 
-vagrant ssh -c "exec sudo /usr/local/sbin/claude-agent --dir $start_rel_q" -- -t \  -R 64342:127.0.0.1:64342
+vagrant ssh -c "exec sudo /usr/local/sbin/claude-agent --dir $start_rel_q" -- -t -R 64342:127.0.0.1:64342
