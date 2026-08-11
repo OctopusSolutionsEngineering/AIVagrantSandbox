@@ -45,6 +45,11 @@ Vagrant.configure("2") do |config|
     vb.cpus   = 6
   end
 
+  config.vm.provider "hyperv" do |vb|
+    vb.memory = 4096
+    vb.cpus   = 6
+  end
+
   anthropic_api_key = ENV.fetch('ANTHROPIC_API_KEY') do
     raise "ANTHROPIC_API_KEY is not set on the host. " \
           "Export it before running vagrant up:\n" \
