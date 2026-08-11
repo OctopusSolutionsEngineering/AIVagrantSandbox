@@ -64,6 +64,7 @@ Vagrant.configure("2") do |config|
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
     inline: <<-SHELL
+#!/bin/bash
     set -euo pipefail
     install -o root -g root -m 600 /dev/null /etc/anthropic_api_key.env
     echo "export ANTHROPIC_API_KEY='#{anthropic_api_key}'" > /etc/anthropic_api_key.env
@@ -76,6 +77,7 @@ Vagrant.configure("2") do |config|
   config.vm.provision "shell",
     upload_path: "/home/vagrant/vagrant-shell",
     inline: <<-SHELL
+#!/bin/bash
     set -euo pipefail
 
     useradd \
@@ -386,6 +388,7 @@ PROFILE
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
     inline: <<-SHELL
+#!/bin/bash
     set -euo pipefail
 
     command -v jq >/dev/null || { echo "jq is not installed yet; run the main provisioner first"; exit 1; }
@@ -418,6 +421,7 @@ PROFILE
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
     inline: <<-SHELL
+#!/bin/bash
     set -euo pipefail
 
     command -v jq >/dev/null || { echo "jq is not installed yet; run the main provisioner first"; exit 1; }
@@ -442,6 +446,7 @@ PROFILE
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
     inline: <<-SHELL
+#!/bin/bash
     set -euo pipefail
 
     cat > /etc/apparmor.d/bwrap <<'PROFILE'
