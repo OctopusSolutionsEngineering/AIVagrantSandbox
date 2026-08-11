@@ -67,5 +67,5 @@ catch {
 
 Write-Host "Project Directory: $startRelQ"
 
-vagrant ssh -c "exec sudo /usr/local/sbin/claude-agent --dir $startRelQ" -- -t -R 64342:127.0.0.1:64342
+vagrant ssh -c "exec sudo /usr/local/sbin/claude-agent --dir $startRelQ" -- -t -R 64518:127.0.0.1:64518
 exit $LASTEXITCODE
