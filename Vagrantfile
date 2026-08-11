@@ -8,7 +8,7 @@ AGENT_RUNTIME_DIR = "/run/user/#{AGENT_UID}"
 HOST_HOME = File.expand_path("~")
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "generic/ubuntu2204"
+  config.vm.box = "bento/ubuntu-24.04"
 
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
@@ -25,6 +25,7 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provider "hyperv" do |prl, override|
+    override.vm.box = "generic/ubuntu2404"
     override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
     type: nil,
     mount_options: ["share", "rw"]
