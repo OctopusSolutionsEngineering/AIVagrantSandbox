@@ -406,6 +406,18 @@ PROFILE
     version=#{PWSH_VERSION}
     install_dir=/opt/microsoft/powershell/7
 
+    # pwsh creates $XDG_CACHE_HOME/powershell before it does anything else, and aborts
+    # with an unhandled TypeInitializationException if that mkdir fails. The agent runs
+    # its commands inside a sandbox that only allows writes to a short list of paths, so
+    # the mkdir is denied there and pwsh dies before printing its banner. Creating the
+    # directory here — as the account that will use it — is enough: pwsh is happy once
+    # the path exists and does not write into it on startup.
+    #
+    # Ahead of the already-installed check below, so that a box provisioned before this
+    # directory was part of the recipe still gets it.
+    install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 700 \\
+      #{AGENT_HOME}/.cache #{AGENT_HOME}/.cache/powershell
+
     # dpkg's architecture is the thing to branch on rather than `uname -m`, because it
     # names the userland that is actually installed instead of the CPU underneath it: a
     # 64-bit Arm kernel can carry a 32-bit userland, and there uname reports aarch64
