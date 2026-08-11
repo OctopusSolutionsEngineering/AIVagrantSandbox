@@ -10,6 +10,10 @@ HOST_HOME = File.expand_path("~")
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"
 
+  config.vm.provider "hyperv" do |hv, override|
+    override.vm.box = "boxen/ubuntu-24.04"
+  end
+
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   config.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
@@ -24,8 +28,7 @@ Vagrant.configure("2") do |config|
     mount_options: ["share", "rw"]
   end
 
-  config.vm.provider "hyperv" do |prl, override|
-    override.vm.box = "boxen/ubuntu-24.04"
+  config.vm.provider "hyperv" do |hv, override|
     override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
     type: nil,
     mount_options: ["share", "rw"]
@@ -46,9 +49,9 @@ Vagrant.configure("2") do |config|
     vb.cpus   = 6
   end
 
-  config.vm.provider "hyperv" do |vb|
-    vb.maxmemory = 4096
-    vb.cpus   = 6
+  config.vm.provider "hyperv" do |hv|
+    hv.maxmemory = 4096
+    hv.cpus   = 6
   end
 
   anthropic_api_key = ENV.fetch('ANTHROPIC_API_KEY') do
