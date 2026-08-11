@@ -38,7 +38,7 @@ esac
 # re-parses, so it has to survive that second round of word splitting intact.
 start_rel_q=$(printf '%q' "$start_rel")
 
-cd ~/Code/AiAgentVagrantSandbox || exit 1
+cd ~/Code/AIVagrantSandbox || exit 1
 
 echo "Project Directory: $start_rel_q"
 
