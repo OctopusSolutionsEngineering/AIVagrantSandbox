@@ -7,6 +7,11 @@ AGENT_RUNTIME_DIR = "/run/user/#{AGENT_UID}"
 
 HOST_HOME = File.expand_path("~")
 
+# Pinned rather than resolved to "latest" at provision time, so two boxes built a month
+# apart get the same shell, and so the download can be checked against a digest that is
+# known before the request is made. Bump this to upgrade.
+PWSH_VERSION = "7.6.4"
+
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"
 
@@ -382,6 +387,86 @@ PROFILE
     apt-get install -y nodejs
 
     npm install -g @anthropic-ai/claude-code
+  SHELL
+
+  # PowerShell is installed from the tar.gz binary archive rather than from Microsoft's
+  # apt repository, because that repository publishes the package for amd64 only: on an
+  # Arm host `apt-get install powershell` finds nothing and the box comes up without a
+  # shell it was asked for. The binary archive is published for both instruction sets,
+  # so the architecture is detected here and the matching file is fetched.
+  config.vm.provision "powershell",
+    type: "shell",
+    upload_path: "/home/vagrant/vagrant-shell",
+    inline: <<-SHELL
+#!/bin/bash
+    set -euo pipefail
+
+    command -v curl >/dev/null || { echo "curl is not installed yet; run the main provisioner first"; exit 1; }
+
+    version=#{PWSH_VERSION}
+    install_dir=/opt/microsoft/powershell/7
+
+    # dpkg's architecture is the thing to branch on rather than `uname -m`, because it
+    # names the userland that is actually installed instead of the CPU underneath it: a
+    # 64-bit Arm kernel can carry a 32-bit userland, and there uname reports aarch64
+    # while every binary on the box is armhf. The release assets spell the names
+    # differently again — amd64 is x64 there — hence the mapping rather than reuse.
+    deb_arch=$(dpkg --print-architecture)
+    case $deb_arch in
+      amd64) arch=x64   ;;
+      arm64) arch=arm64 ;;
+      *)
+        echo "PowerShell publishes no Linux binary archive for $deb_arch" >&2
+        exit 1
+        ;;
+    esac
+
+    if [ -x "$install_dir/pwsh" ] &&
+       "$install_dir/pwsh" --version 2>/dev/null | grep -qx "PowerShell $version"; then
+      echo "PowerShell $version ($arch) is already installed"
+      exit 0
+    fi
+
+    tarball=powershell-$version-linux-$arch.tar.gz
+    release=https://github.com/PowerShell/PowerShell/releases/download/v$version
+
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+
+    echo "fetching $tarball for $deb_arch"
+    curl -fsSL -o "$tmp/$tarball" "$release/$tarball"
+
+    # A single hashes.sha256 covers every artifact in the release, so the line for this
+    # exact filename is selected before checking. Handing the whole file to sha256sum
+    # would let a wrong-architecture download pass by matching another asset's digest.
+    #
+    # That file is generated on Windows and published as UTF-16 with a byte order mark
+    # and CRLF endings, so it has to be decoded before anything compares bytes with it:
+    # awk sees a NUL between every character of the filename and matches no ASCII
+    # string. (GNU grep converts UTF-16 input silently, which makes this easy to miss
+    # when probing by hand.) The BOM is tested rather than converted unconditionally, so
+    # a release that switches to plain UTF-8 keeps working. -f UTF-16 rather than
+    # UTF-16LE, because that spelling consumes the BOM instead of translating it into
+    # the front of the first digest.
+    curl -fsSL -o "$tmp/hashes.sha256" "$release/hashes.sha256"
+    case $(head -c 2 "$tmp/hashes.sha256" | od -An -tx1 | tr -d ' \\n') in
+      fffe|feff) iconv -f UTF-16 -t UTF-8 < "$tmp/hashes.sha256" ;;
+      *)         cat "$tmp/hashes.sha256" ;;
+    esac | tr -d '\\r' > "$tmp/hashes.txt"
+
+    awk -v f="$tarball" '$2 == f || $2 == "*" f' "$tmp/hashes.txt" > "$tmp/expected"
+    [ -s "$tmp/expected" ] || { echo "no published sha256 line for $tarball" >&2; exit 1; }
+    ( cd "$tmp" && sha256sum -c expected )
+
+    # Replaced outright rather than unpacked over the top, so that files belonging to a
+    # previous version cannot survive an upgrade and shadow the new ones.
+    rm -rf "$install_dir"
+    mkdir -p "$install_dir"
+    tar -xzf "$tmp/$tarball" -C "$install_dir"
+    chmod +x "$install_dir/pwsh"
+    ln -sf "$install_dir/pwsh" /usr/local/bin/pwsh
+
+    pwsh --version
   SHELL
 
   config.vm.provision "claude-mcp-paths",
