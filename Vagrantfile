@@ -329,6 +329,7 @@ MARKDOWN
       python3-pip \
       python3-venv \
       qemu-user-static \
+      ruby-full \
       screen \
       slirp4netns \
       uidmap \
