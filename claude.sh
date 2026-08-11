@@ -38,6 +38,8 @@ esac
 # re-parses, so it has to survive that second round of word splitting intact.
 start_rel_q=$(printf '%q' "$start_rel")
 
+# This assumes that ~/Code/AIVagrantSandbox is the directory containing the Vagrantfile.
+# Update this path if your Vagrantfile is located elsewhere.
 cd ~/Code/AIVagrantSandbox || exit 1
 
 echo "Project Directory: $start_rel_q"
