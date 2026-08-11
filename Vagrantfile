@@ -25,7 +25,7 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provider "hyperv" do |prl, override|
-    override.vm.box = "generic/ubuntu2204"
+    override.vm.box = "boxen/ubuntu-24.04"
     override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
     type: nil,
     mount_options: ["share", "rw"]
