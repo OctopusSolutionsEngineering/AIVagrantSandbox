@@ -12,3 +12,10 @@ In InteliJ IDEA and other JetBrains IDEs, you can configure the script to be cal
 Enable the MCP server by navigating to Tools > MCP Server.
 
 ![MCP Server](mcp.png)
+
+Update Claude Code with:
+
+```bash
+vagrant ssh
+sudo npm update -g @anthropic-ai/claude-code
+```
