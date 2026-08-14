@@ -1,5 +1,7 @@
 An example AI agent sandbox built with Vagrant.
 
+# Running Claude Code in a JetBrains IDE
+
 The `claude.sh` or `claude.ps1` script is expected to be called by the IDE when launching Claude Code.
 
 > [!WARNING]
@@ -12,6 +14,8 @@ In InteliJ IDEA and other JetBrains IDEs, you can configure the script to be cal
 Enable the MCP server by navigating to Tools > MCP Server.
 
 ![MCP Server](mcp.png)
+
+# Updating Claude Code
 
 Update Claude Code with:
 

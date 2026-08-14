@@ -73,11 +73,59 @@ Vagrant.configure("2") do |config|
     set -euo pipefail
     install -o root -g root -m 600 /dev/null /etc/anthropic_api_key.env
     echo "export ANTHROPIC_API_KEY='#{anthropic_api_key}'" > /etc/anthropic_api_key.env
+    # This is a dummy environment variable used by QWEN Code when running against
+    # a local Ollama server.
+    #
+    # This is an example ~/.qwen/settings.json file, assuming Ollama is running on 192.168.1.1:
+    # {
+    #   "security": {
+    #     "auth": {
+    #       "selectedType": "openai",
+    #       "apiKey": "sk-12345-dummy-password-ollama",
+    #       "baseUrl": "http://192.168.1.1:11434/v1"
+    #     }
+    #   },
+    #   "model": {
+    #     "name": "qwen3.6:35b-a3b"
+    #   },
+    #   "modelProviders": {
+    #     "openai": [
+    #       {
+    #         "id": "qwen3.6:35b-a3b",
+    #         "name": "Qwen 3.6 (Local)",
+    #         "baseUrl": "http://192.168.1.1:11434/v1",
+    #         "envKey": "OLLAMA_DUMMY_KEY"
+    #       }
+    #     ]
+    #   },
+    #   "$version": 4,
+    #   "tools": {
+    # 	  "approvalMode": "yolo"
+    #   },
+    #   "mcpServers": {
+    #     "ij-mcp-server": {
+    #       "type": "streamable-http",
+    #       "url": "http://127.0.0.1:64342/stream"
+    #     }
+    #   },
+    #   "mcp": {
+    #     "excluded": []
+    #   }
+    # }
+    grep -q '^OLLAMA_DUMMY_KEY=' /etc/environment || echo 'OLLAMA_DUMMY_KEY=dummy' >> /etc/environment
   SHELL
 
   config.vm.provision "file",
     source: "~/.claude.json",
     destination: "/home/vagrant/claude.json.upload"
+
+  # Copy QWEN settings if they exist
+  qwen_settings_source = File.join(HOST_HOME, ".qwen", "settings.json")
+  if File.file?(qwen_settings_source)
+    config.vm.provision "file",
+      source: qwen_settings_source,
+      destination: "/home/vagrant/qwen-settings.json.upload"
+  end
 
   config.vm.provision "shell",
     upload_path: "/home/vagrant/vagrant-shell",
@@ -160,6 +208,14 @@ LAUNCHER
     install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
       /home/vagrant/claude.json.upload #{AGENT_HOME}/.claude.json
     rm -f /home/vagrant/claude.json.upload
+
+    # Only copy qwen settings if they were uploaded from the host.
+    if [ -s /home/vagrant/qwen-settings.json.upload ]; then
+      install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 700 "#{AGENT_HOME}/.qwen"
+      install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
+        /home/vagrant/qwen-settings.json.upload "#{AGENT_HOME}/.qwen/settings.json"
+    fi
+    rm -f /home/vagrant/qwen-settings.json.upload
 
     mkdir -p /etc/claude-code
     chown root:root /etc/claude-code
@@ -386,7 +442,19 @@ PROFILE
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
     apt-get install -y nodejs
 
-    npm install -g @anthropic-ai/claude-code
+    npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code
+
+    # qwen-code-no-telemetry — pinned to a no-telemetry fork version.
+    # Bump QWEN_VERSION here to upgrade; the script skips gracefully if
+    # the exact version is already present.
+    QWEN_VERSION="v0.21.11-no-telemetry"
+    if [ "$(npm list -g qwen-code 2>/dev/null | grep "$QWEN_VERSION")" ]; then
+      echo "qwen-code $QWEN_VERSION is already installed"
+    else
+      echo "installing qwen-code $QWEN_VERSION ..."
+      curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.21.11-no-telemetry/install.sh \
+        | bash -s "$QWEN_VERSION"
+    fi
   SHELL
 
   # PowerShell is installed from the tar.gz binary archive rather than from Microsoft's
