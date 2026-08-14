@@ -442,7 +442,8 @@ PROFILE
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
     apt-get install -y nodejs
 
-    npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code
+    npm config set allow-scripts=@anthropic-ai/claude-code,@qwen-code/qwen-code --location=user
+    npm install -g @anthropic-ai/claude-code
 
     # qwen-code-no-telemetry — pinned to a no-telemetry fork version.
     # Bump QWEN_VERSION here to upgrade; the script skips gracefully if
