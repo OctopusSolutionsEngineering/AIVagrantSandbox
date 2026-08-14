@@ -27,5 +27,5 @@ sudo npm update -g @anthropic-ai/claude-code
 # Running QWEN
 
 ```bash
-vagrant ssh -c "sudo -u claude qwen"
+vagrant ssh -c "sudo -u claude /home/claude/.npm-global/bin/qwen"
 ```
