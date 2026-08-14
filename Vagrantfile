@@ -448,12 +448,13 @@ PROFILE
     # Bump QWEN_VERSION here to upgrade; the script skips gracefully if
     # the exact version is already present.
     QWEN_VERSION="v0.21.11-no-telemetry"
-    if [ "$(npm list -g qwen-code 2>/dev/null | grep "$QWEN_VERSION")" ]; then
+    if sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
+      'npm list -g qwen-code 2>/dev/null | grep -q "$QWEN_VERSION"'; then
       echo "qwen-code $QWEN_VERSION is already installed"
     else
       echo "installing qwen-code $QWEN_VERSION ..."
-      curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.21.11-no-telemetry/install.sh \
-        | bash -s "$QWEN_VERSION"
+      sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
+        'curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.21.11-no-telemetry/install.sh | bash -s "$QWEN_VERSION"'
     fi
   SHELL
 
