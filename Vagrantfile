@@ -342,9 +342,25 @@ Only `~/Code` is synced. If a host path falls outside it, do not invent a guest
 equivalent and do not create the directory to make the path resolve — say the
 file is not mounted into the sandbox and ask the user how to proceed.
 
+## Exception: JetBrains IDE tools (`mcp__idea__*`)
+
+These MCP tools address the user's IDE, not the sandbox filesystem, and the IDE
+works in host paths. Their path arguments — `projectPath`, `filePath`, and the
+like — take the **host** prefix, which inverts the rule above:
+
+- `projectPath` for a project inside the synced tree: `#{HOST_HOME}/Code/<project>`.
+- If you are about to hand an `#{AGENT_HOME}/Code/...` path to an IDE MCP
+  argument, you are on the wrong side of the mapping — rewrite it to the host
+  prefix first.
+
+If such a call fails with "`projectPath` ... doesn't correspond to any open
+project", the error includes the IDE's currently open projects — retry with one
+of those paths rather than the one you just passed.
+
 ## Translating back
 
-Use guest paths for every tool call, and when you quote a path in your answer.
+Use guest paths for every filesystem tool call — the JetBrains IDE tools above
+are the exception — and when you quote a path in your answer.
 The exception is when you are telling the user which file to open on the host
 (so their IDE can resolve it) — give the `#{HOST_HOME}/...` form there, and say
 which side of the mapping the path belongs to.
