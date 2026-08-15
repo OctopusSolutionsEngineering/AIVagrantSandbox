@@ -276,6 +276,7 @@ LAUNCHER
         "#{AGENT_HOME}/.claude.json",
         "#{AGENT_HOME}/.claude/settings*.json",
         "#{AGENT_HOME}/.claude/CLAUDE.md",
+        "#{AGENT_HOME}/.agents/AGENTS.md",
         "#{AGENT_HOME}/Code/.claude/settings*.json"
       ]
     },
@@ -366,10 +367,17 @@ task genuinely needs root in this VM, say so and ask the user to run it from the
 host with `vagrant ssh`.
 MARKDOWN
 
-    chown -R #{AGENT_USER}:#{AGENT_USER} #{AGENT_HOME}/.claude
-    chown root:root #{AGENT_HOME}/.claude/settings.json #{AGENT_HOME}/.claude/CLAUDE.md
+    # Agents that read AGENTS.md rather than CLAUDE.md get the same briefing. The
+    # copy is taken here, immediately after the heredoc, so the two files cannot
+    # drift: both are rewritten from the same source on every provision.
+    mkdir -p #{AGENT_HOME}/.agents
+    cp #{AGENT_HOME}/.claude/CLAUDE.md #{AGENT_HOME}/.agents/AGENTS.md
+
+    chown -R #{AGENT_USER}:#{AGENT_USER} #{AGENT_HOME}/.claude #{AGENT_HOME}/.agents
+    chown root:root #{AGENT_HOME}/.claude/settings.json #{AGENT_HOME}/.claude/CLAUDE.md #{AGENT_HOME}/.agents/AGENTS.md
     chmod 444 #{AGENT_HOME}/.claude/settings.json
     chmod 444 #{AGENT_HOME}/.claude/CLAUDE.md
+    chmod 444 #{AGENT_HOME}/.agents/AGENTS.md
 
     touch /home/.mcp.json
     chown root:root /home/.mcp.json
