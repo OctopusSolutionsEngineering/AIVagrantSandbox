@@ -103,10 +103,10 @@ Vagrant.configure("2") do |config|
     # 	  "approvalMode": "yolo"
     #   },
     #   "mcpServers": {
-    #     "ij-mcp-server": {
-    #       "type": "streamable-http",
-    #       "url": "http://127.0.0.1:64342/stream"
-    #     }
+    # 	    "idea":  {
+    # 		  "type": "sse",
+    # 		  "url": "http://127.0.0.1:64342/sse"
+    # 	    }
     #   },
     #   "mcp": {
     #     "excluded": []
