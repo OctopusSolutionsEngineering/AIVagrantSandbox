@@ -25,9 +25,17 @@ them. A key that was provisioned earlier is left in place rather than deleted wh
 missing from the host environment; `vagrant up` says so, and the file can be removed in
 the guest to revoke it.
 
-All three are handed to the agent process by `/usr/local/sbin/claude-agent` and are
-therefore available to the MCP servers it launches, but all three are denied to the
-agent's own sandboxed Bash tool, so a command it runs cannot read or leak them.
+The files are root-owned and mode 600, so the `claude` account cannot read them itself.
+They are picked up by the root-owned launchers — `/usr/local/sbin/claude-agent` and
+`/usr/local/sbin/qwen-agent` — which forward them into the agent's environment and then
+drop to that account. Both launchers forward the optional credentials; only
+`claude-agent` forwards `ANTHROPIC_API_KEY`, since Qwen has no use for it.
+
+`ANTHROPIC_API_KEY` is additionally denied to Claude Code's own sandboxed Bash tool by
+`/etc/claude-code/managed-settings.json`, so a command the agent runs cannot read or leak
+it. The optional credentials carry no such rule and are readable by commands the agent
+runs — which is what makes them usable from `az` or `octo`, and what to weigh before
+adding a key here.
 
 # Running Claude Code in a JetBrains IDE
 
@@ -44,7 +52,7 @@ sudo npm update -g @anthropic-ai/claude-code
 
 # Running QWEN
 
-Run `qwen.sh` to launch QWEN Code.
+Run `qwen.sh` or `qwen.ps1` to launch QWEN Code.
 
 # Configuring IDE MCP server
 

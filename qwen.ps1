@@ -53,7 +53,7 @@ else {
 # re-parses, so it has to survive that second round of word splitting intact.
 # Single quotes stop the guest shell from touching the contents; an embedded single
 # quote is closed, escaped literally, and reopened.
-function Get-BashSafe([string] $s) { "'" + $s.Replace("'", "'\''") + "'" }
+$startRelQ = "'" + $startRel.Replace("'", "'\''") + "'"
 
 # This assumes that ~/Code/AIVagrantSandbox is the directory containing the Vagrantfile.
 # Update this path if your Vagrantfile is located elsewhere.
@@ -65,15 +65,10 @@ catch {
     exit 1
 }
 
-Write-Host "Project Directory: $startRel"
+Write-Host "Project Directory: $startRelQ"
 
-# Three shells get to re-parse this before qwen ever runs — the guest login shell
-# that `vagrant ssh -c` hands the string to, the `bash -c` that sudo starts as the
-# claude user, and the path `cd` consumes inside it. Quoting once per layer,
-# innermost first, is what keeps a project directory with a space in it from
-# arriving as two arguments.
-$inner = "cd /home/claude/Code/$(Get-BashSafe $startRel) && exec /home/claude/.npm-global/bin/qwen"
-$remote = "exec sudo -u claude bash -c $(Get-BashSafe $inner)"
-
-vagrant ssh -c $remote -- -t -R 64342:127.0.0.1:64342
+# Handed to a root-owned launcher rather than to qwen directly, because the host
+# credentials the agent may need live in root-owned files that the claude account cannot
+# read: the launcher is what reads them, forwards them, and then drops to that account.
+vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ" -- -t -R 64342:127.0.0.1:64342
 exit $LASTEXITCODE

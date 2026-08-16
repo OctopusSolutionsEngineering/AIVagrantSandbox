@@ -34,17 +34,17 @@ case $start_dir in
     ;;
 esac
 
+# The relative path is spliced into a command string that a shell in the guest
+# re-parses, so it has to survive that second round of word splitting intact.
+start_rel_q=$(printf '%q' "$start_rel")
+
 # This assumes that ~/Code/AIVagrantSandbox is the directory containing the Vagrantfile.
 # Update this path if your Vagrantfile is located elsewhere.
 cd ~/Code/AIVagrantSandbox || exit 1
 
-echo "Project Directory: $start_rel"
+echo "Project Directory: $start_rel_q"
 
-# Two shells get to re-parse this before qwen ever runs — the guest login shell
-# that `vagrant ssh -c` hands the string to, and the `bash -c` that sudo starts as
-# the claude user. Quoting once per layer, innermost first, is what keeps a project
-# directory with a space in it from arriving as two arguments.
-inner="cd /home/claude/Code/$(printf '%q' "$start_rel") && exec /home/claude/.npm-global/bin/qwen"
-remote="exec sudo -u claude bash -c $(printf '%q' "$inner")"
-
-vagrant ssh -c "$remote" -- -t -R 64342:127.0.0.1:64342
+# Handed to a root-owned launcher rather than to qwen directly, because the host
+# credentials the agent may need live in root-owned files that the claude account cannot
+# read: the launcher is what reads them, forwards them, and then drops to that account.
+vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $start_rel_q" -- -t -R 64342:127.0.0.1:64342

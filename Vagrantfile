@@ -26,6 +26,107 @@ def credential_env_file(name)
   "/etc/#{name.downcase}.env"
 end
 
+# Every agent is started the same way — check --dir, collect whichever credentials the
+# host provided, then drop from root to the agent account — so the launcher is written
+# once here and stamped out per agent instead of copied. Copies would drift, and the part
+# most worth not getting wrong twice is the part that handles credentials.
+#
+# `command` is an absolute path for agents that are not on the login shell's PATH. Ubuntu's
+# stock .bashrc returns before it reaches anything an installer appended, when the shell
+# is not interactive, so an agent installed under ~/.npm-global is unreachable by name
+# from the `bash -lc` below however the PATH was set up.
+#
+# `required_credentials` are sourced unconditionally and their absence is fatal;
+# `optional_credentials` are forwarded when present and passed over when not.
+def agent_launcher(name:, command:, required_credentials: [], optional_credentials: [])
+  required = required_credentials.map { |var, file|
+    ". #{file}\nagent_env+=(#{var}=\"$#{var}\")\n"
+  }.join
+
+  optional =
+    if optional_credentials.empty?
+      ""
+    else
+      pairs = optional_credentials.map { |var, file| "#{var}:#{file}" }.join(" ")
+      <<~OPTIONAL
+        # The optional credentials, as name:file pairs so this script never has to re-derive
+        # one from the other. Whatever the host provided is forwarded; whatever it did not is
+        # passed over, which is why the file is tested rather than assumed.
+        for entry in #{pairs}; do
+          var=${entry%%:*}
+          file=${entry#*:}
+          [ -r "$file" ] || continue
+          . "$file"
+          agent_env+=("$var=${!var-}")
+        done
+      OPTIONAL
+    end
+
+  # Joined here rather than interpolated as two slots, so that an agent with no required
+  # credentials does not get the blank line one would have left behind.
+  credentials = [required, optional].reject(&:empty?).join("\n").chomp
+
+  <<~LAUNCHER
+    #!/bin/bash
+    set -euo pipefail
+
+    # Credentials are read here and nowhere else. Their files are root-owned and mode 600,
+    # and this launcher is the last thing to run as root before the drop to the agent
+    # account, so this is the only point at which they can be picked up at all.
+    agent_env=()
+
+    #{credentials}
+
+    # --dir is the directory the agent should start in, given relative to the synced
+    # tree. #{name.sub("-agent", "")}.sh sends the directory it was called from on the host, which is the
+    # same tree under a different prefix, so the relative path is all that travels.
+    # Optional: without it the agent starts at the root, which is what a bare
+    # `sudo /usr/local/sbin/#{name}` in the guest still does. Anything left on the
+    # command line afterwards is passed through to the agent untouched.
+    code_root=#{AGENT_HOME}/Code
+    target=$code_root
+    rel=
+
+    if [ "${1:-}" = --dir ]; then
+      if [ "$#" -lt 2 ]; then
+        echo "#{name}: --dir needs a value" >&2
+        exit 2
+      fi
+      rel=$2
+      shift 2
+    fi
+
+    # Validated, but never fatal: a --dir that cannot be honoured should still get you a
+    # working agent at the root rather than no agent at all. The one thing worth being
+    # strict about is the shape — --dir names a location inside the synced tree by
+    # construction, so an absolute path or a .. component is a caller bug, and a caller
+    # bug that silently starts the agent somewhere outside the tree is worth refusing.
+    case $rel in
+      ""|.)
+        ;;
+      /*)
+        echo "#{name}: --dir must be relative to $code_root, ignoring '$rel'" >&2
+        ;;
+      ..|../*|*/..|*/../*)
+        echo "#{name}: --dir must stay inside $code_root, ignoring '$rel'" >&2
+        ;;
+      *)
+        if [ -d "$code_root/$rel" ]; then
+          target=$code_root/$rel
+        else
+          echo "#{name}: $code_root/$rel does not exist, starting in $code_root" >&2
+        fi
+        ;;
+    esac
+
+    # The target is handed to the inner shell as a positional argument rather than
+    # spliced into its script. That script is a single-quoted string, so a path pasted
+    # into it would be parsed by that shell as code.
+    exec sudo -u #{AGENT_USER} -H env "${agent_env[@]}" \\
+      bash -lc 'cd "$1" || exit 1; shift; exec #{command} "$@"' #{name} "$target" "$@"
+  LAUNCHER
+end
+
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"
 
@@ -116,6 +217,33 @@ Vagrant.configure("2") do |config|
       "    fi\n"
     end.join
 
+  optional_credential_pairs =
+    OPTIONAL_HOST_CREDENTIALS.map { |name| [name, credential_env_file(name)] }
+
+  # ANTHROPIC_API_KEY is deliberately absent from qwen-agent's set: Qwen has no use for
+  # it, and a launcher that never forwards it is one fewer place the key can reach.
+  agent_launchers = {
+    "claude-agent" => agent_launcher(
+      name: "claude-agent",
+      command: "claude",
+      required_credentials: [["ANTHROPIC_API_KEY", "/etc/anthropic_api_key.env"]],
+      optional_credentials: optional_credential_pairs,
+    ),
+    "qwen-agent" => agent_launcher(
+      name: "qwen-agent",
+      command: "#{AGENT_HOME}/.npm-global/bin/qwen",
+      optional_credentials: optional_credential_pairs,
+    ),
+  }
+
+  install_agent_launchers = agent_launchers.map { |launcher, body|
+    "    cat > /usr/local/sbin/#{launcher} <<'LAUNCHER'\n" \
+    "#{body}" \
+    "LAUNCHER\n\n" \
+    "    chown root:root /usr/local/sbin/#{launcher}\n" \
+    "    chmod 755 /usr/local/sbin/#{launcher}\n"
+  }.join("\n")
+
   config.vm.provision "shell",
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
@@ -198,79 +326,7 @@ Vagrant.configure("2") do |config|
 
     install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 750 #{AGENT_HOME}
 
-    cat > /usr/local/sbin/claude-agent <<'LAUNCHER'
-#!/bin/bash
-set -euo pipefail
-
-. /etc/anthropic_api_key.env
-
-# The optional credentials, as name:file pairs so this script never has to re-derive one
-# from the other. Each file is root-owned and mode 600, readable only here, in the
-# launcher, which is the last thing to run as root before the agent is dropped to its own
-# account; whatever is present is forwarded into that account's environment and whatever
-# the host did not provide is simply not forwarded.
-agent_env=(ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY")
-
-for entry in #{OPTIONAL_HOST_CREDENTIALS.map { |name| "#{name}:#{credential_env_file(name)}" }.join(" ")}; do
-  name=${entry%%:*}
-  file=${entry#*:}
-  [ -r "$file" ] || continue
-  . "$file"
-  agent_env+=("$name=${!name-}")
-done
-
-# --dir is the directory the agent should start in, given relative to the synced
-# tree. claude.sh sends the directory it was called from on the host, which is the
-# same tree under a different prefix, so the relative path is all that travels.
-# Optional: without it the agent starts at the root, which is what a bare
-# `sudo /usr/local/sbin/claude-agent` in the guest still does. Anything left on the
-# command line afterwards is passed through to claude untouched.
-code_root=#{AGENT_HOME}/Code
-target=$code_root
-rel=
-
-if [ "${1:-}" = --dir ]; then
-  if [ "$#" -lt 2 ]; then
-    echo "claude-agent: --dir needs a value" >&2
-    exit 2
-  fi
-  rel=$2
-  shift 2
-fi
-
-# Validated, but never fatal: a --dir that cannot be honoured should still get you a
-# working agent at the root rather than no agent at all. The one thing worth being
-# strict about is the shape — --dir names a location inside the synced tree by
-# construction, so an absolute path or a .. component is a caller bug, and a caller
-# bug that silently starts the agent somewhere outside the tree is worth refusing.
-case $rel in
-  ""|.)
-    ;;
-  /*)
-    echo "claude-agent: --dir must be relative to $code_root, ignoring '$rel'" >&2
-    ;;
-  ..|../*|*/..|*/../*)
-    echo "claude-agent: --dir must stay inside $code_root, ignoring '$rel'" >&2
-    ;;
-  *)
-    if [ -d "$code_root/$rel" ]; then
-      target=$code_root/$rel
-    else
-      echo "claude-agent: $code_root/$rel does not exist, starting in $code_root" >&2
-    fi
-    ;;
-esac
-
-# The target is handed to the inner shell as a positional argument rather than
-# spliced into its script. That script is a single-quoted string, so a path pasted
-# into it would be parsed by that shell as code.
-exec sudo -u #{AGENT_USER} -H env "${agent_env[@]}" \
-  bash -lc 'cd "$1" || exit 1; shift; exec claude "$@"' claude "$target" "$@"
-LAUNCHER
-
-    chown root:root /usr/local/sbin/claude-agent
-    chmod 755 /usr/local/sbin/claude-agent
-
+#{install_agent_launchers}
     for skel in /etc/skel/.[!.]*; do
       [ -f "$skel" ] || continue
       install -o #{AGENT_USER} -g #{AGENT_USER} -m 644 \
