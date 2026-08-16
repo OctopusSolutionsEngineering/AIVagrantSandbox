@@ -12,6 +12,20 @@ HOST_HOME = File.expand_path("~")
 # known before the request is made. Bump this to upgrade.
 PWSH_VERSION = "7.6.4"
 
+# Credentials read from the host environment and pushed into the guest as root-owned
+# files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
+# because it is mandatory — without it there is no agent at all — whereas these are only
+# wanted by some of the tools the agent can reach, so a host that has not exported them
+# should still be able to bring the box up.
+OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY].freeze
+
+# One place to derive the file name from the variable name, so that the provisioner
+# writing the file, the launcher sourcing it, and the sandbox rule denying reads of it
+# cannot drift apart about where it lives.
+def credential_env_file(name)
+  "/etc/#{name.downcase}.env"
+end
+
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"
 
@@ -65,6 +79,43 @@ Vagrant.configure("2") do |config|
           "  export ANTHROPIC_API_KEY='your-key-here'"
   end
 
+  # Reported rather than raised, for the reason given at OPTIONAL_HOST_CREDENTIALS. Each
+  # value is read once, here, so the script generated below is built from one snapshot of
+  # the host environment instead of consulting it again further down.
+  optional_credentials = OPTIONAL_HOST_CREDENTIALS.map do |name|
+    value = ENV[name]
+    if value.nil? || value.empty?
+      warn "#{name} is not set on the host, so the guest will not receive it. " \
+           "Export it before running vagrant up if the agent needs it."
+      nil
+    else
+      [name, value]
+    end
+  end.compact
+
+  # Quoted by Ruby rather than by hand, so that a key containing a space or a quote
+  # cannot arrive in the guest as shell syntax instead of as the key.
+  write_optional_credentials = optional_credentials.map do |name, value|
+    file = credential_env_file(name)
+    line = "export #{name}=#{Shellwords.escape(value)}"
+    "    install -o root -g root -m 600 /dev/null #{file}\n" \
+    "    printf '%s\\n' #{Shellwords.escape(line)} > #{file}\n"
+  end.join
+
+  # A key provisioned earlier and absent from the host environment now is left in place:
+  # this provisioner cannot tell a revoked key from a vagrant up run in a shell that
+  # happened not to export it, and deleting one on the strength of that guess costs more
+  # than keeping it. It does say so, though — a guest still running on a credential the
+  # host no longer has is worth hearing about.
+  report_stale_credentials =
+    (OPTIONAL_HOST_CREDENTIALS - optional_credentials.map(&:first)).map do |name|
+      file = credential_env_file(name)
+      "    if [ -e #{file} ]; then\n" \
+      "      echo \"#{name} is unset on the host, but #{file} from an earlier provision " \
+      "is still in place and will still be used; delete it in the guest to revoke it.\" >&2\n" \
+      "    fi\n"
+    end.join
+
   config.vm.provision "shell",
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
@@ -73,6 +124,12 @@ Vagrant.configure("2") do |config|
     set -euo pipefail
     install -o root -g root -m 600 /dev/null /etc/anthropic_api_key.env
     echo "export ANTHROPIC_API_KEY='#{anthropic_api_key}'" > /etc/anthropic_api_key.env
+
+    # The optional host credentials get the same treatment: one root-owned, mode 600 file
+    # each, rewritten from the host environment on every boot because this provisioner
+    # runs always. Lines below are generated, so nothing appears here for a key the host
+    # did not export.
+#{write_optional_credentials}#{report_stale_credentials}
     # This is a dummy environment variable used by QWEN Code when running against
     # a local Ollama server.
     #
@@ -92,7 +149,7 @@ Vagrant.configure("2") do |config|
     #     "openai": [
     #       {
     #         "id": "qwen3.6:35b-a3b",
-    #         "name": "Qwen 3.6 (Local)",
+    #         "name": "Qwen (Local)",
     #         "baseUrl": "http://192.168.1.1:11434/v1",
     #         "envKey": "OLLAMA_DUMMY_KEY"
     #       }
@@ -103,10 +160,10 @@ Vagrant.configure("2") do |config|
     # 	  "approvalMode": "yolo"
     #   },
     #   "mcpServers": {
-    # 	    "idea":  {
-    # 		  "type": "sse",
-    # 		  "url": "http://127.0.0.1:64342/sse"
-    # 	    }
+    # 	  "idea":  {
+    # 	    "type": "sse",
+    # 		"url": "http://127.0.0.1:64342/sse"
+    # 	  }
     #   },
     #   "mcp": {
     #     "excluded": []
@@ -146,6 +203,21 @@ Vagrant.configure("2") do |config|
 set -euo pipefail
 
 . /etc/anthropic_api_key.env
+
+# The optional credentials, as name:file pairs so this script never has to re-derive one
+# from the other. Each file is root-owned and mode 600, readable only here, in the
+# launcher, which is the last thing to run as root before the agent is dropped to its own
+# account; whatever is present is forwarded into that account's environment and whatever
+# the host did not provide is simply not forwarded.
+agent_env=(ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY")
+
+for entry in #{OPTIONAL_HOST_CREDENTIALS.map { |name| "#{name}:#{credential_env_file(name)}" }.join(" ")}; do
+  name=${entry%%:*}
+  file=${entry#*:}
+  [ -r "$file" ] || continue
+  . "$file"
+  agent_env+=("$name=${!name-}")
+done
 
 # --dir is the directory the agent should start in, given relative to the synced
 # tree. claude.sh sends the directory it was called from on the host, which is the
@@ -192,7 +264,7 @@ esac
 # The target is handed to the inner shell as a positional argument rather than
 # spliced into its script. That script is a single-quoted string, so a path pasted
 # into it would be parsed by that shell as code.
-exec sudo -u #{AGENT_USER} -H env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+exec sudo -u #{AGENT_USER} -H env "${agent_env[@]}" \
   bash -lc 'cd "$1" || exit 1; shift; exec claude "$@"' claude "$target" "$@"
 LAUNCHER
 
