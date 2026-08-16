@@ -1,5 +1,7 @@
 An example AI agent sandbox built with Vagrant.
 
+[Sandboxing local AI Agents](https://octopus.com/blog/local-ai-agent-sandboxes)
+
 # Host environment variables
 
 Credentials are read from the environment of the shell that runs `vagrant up` and written
