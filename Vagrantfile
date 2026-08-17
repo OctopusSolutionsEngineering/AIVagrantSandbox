@@ -12,6 +12,19 @@ HOST_HOME = File.expand_path("~")
 # known before the request is made. Bump this to upgrade.
 PWSH_VERSION = "7.6.4"
 
+# The time servers the guest keeps its clock against. A VM's clock is only as good as the
+# last time anything corrected it: the box inherits the host clock at boot and then drifts,
+# and a host that sleeps or hibernates leaves the guest minutes or hours behind when it
+# comes back. That is worth fixing rather than living with, because a wrong clock breaks
+# things a long way from the clock — TLS handshakes fail on not-yet-valid certificates,
+# apt rejects release files as being from the future, and file timestamps written into the
+# synced tree come back wrong on the host.
+#
+# FallbackNTP is only consulted when nothing in NTP answers, so the two lists are a
+# preference order and not a pool to spread queries over.
+NTP_SERVERS          = %w[time.cloudflare.com time.google.com].freeze
+NTP_FALLBACK_SERVERS = %w[ntp.ubuntu.com pool.ntp.org].freeze
+
 # Credentials read from the host environment and pushed into the guest as root-owned
 # files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
 # because it is mandatory — without it there is no agent at all — whereas these are only
@@ -298,6 +311,76 @@ Vagrant.configure("2") do |config|
     #   }
     # }
     grep -q '^OLLAMA_DUMMY_KEY=' /etc/environment || echo 'OLLAMA_DUMMY_KEY=dummy' >> /etc/environment
+  SHELL
+
+  # Ordered ahead of the provisioner that installs everything, because apt is one of the
+  # things a wrong clock breaks: signature checks on a release file compare its dates
+  # against now, and a guest whose host slept can be far enough out for the whole
+  # install to fail. Runs always, so the correction happens on every boot rather than only
+  # on the one where the box was built — which is the point, since the drift accumulates
+  # between boots.
+  config.vm.provision "ntp",
+    type: "shell",
+    run: "always",
+    upload_path: "/home/vagrant/vagrant-shell",
+    inline: <<-SHELL
+#!/bin/bash
+    set -euo pipefail
+
+    # Nothing is installed in the normal case: systemd-timesyncd is part of the base
+    # system on Ubuntu. It is still checked for, because the providers below do not all
+    # use the same box and a minimised image can have dropped it.
+    if [ ! -e /usr/lib/systemd/system/systemd-timesyncd.service ]; then
+      apt-get update -y
+      apt-get install -y systemd-timesyncd
+    fi
+
+    # chrony and ntpsec both mask systemd-timesyncd when installed, since two daemons
+    # steering one clock is worse than either alone. If something did that deliberately,
+    # leave it be and say so rather than unmasking it and starting a fight over the clock.
+    if [ "$(systemctl is-enabled systemd-timesyncd 2>/dev/null || true)" = masked ]; then
+      echo "systemd-timesyncd is masked, so another time daemon is managing the clock;" \\
+           "leaving it alone. Configure #{NTP_SERVERS.join(" ")} there instead." >&2
+      exit 0
+    fi
+
+    # Written as a drop-in rather than into /etc/systemd/timesyncd.conf, so that a
+    # distribution upgrade replacing that file cannot take this configuration with it, and
+    # so `vagrant up` never has to edit a file it did not write.
+    install -d -o root -g root -m 755 /etc/systemd/timesyncd.conf.d
+    cat > /etc/systemd/timesyncd.conf.d/10-vagrant.conf <<'CONF'
+# Managed by the Vagrantfile; edits here are overwritten on the next `vagrant up`.
+[Time]
+NTP=#{NTP_SERVERS.join(" ")}
+FallbackNTP=#{NTP_FALLBACK_SERVERS.join(" ")}
+CONF
+    chown root:root /etc/systemd/timesyncd.conf.d/10-vagrant.conf
+    chmod 644 /etc/systemd/timesyncd.conf.d/10-vagrant.conf
+
+    # set-ntp enables and starts the service; the restart is what makes it read the
+    # drop-in just written, and also what corrects a large offset promptly — timesyncd
+    # steps the clock when it starts and only slews once it is running, so a guest that
+    # came back from a suspended host is right within seconds instead of hours.
+    timedatectl set-ntp true
+    systemctl restart systemd-timesyncd
+
+    # Reported, not enforced: the first sync needs UDP 123 out to the internet, and a
+    # network that does not allow it should still get a working box. Anything watching the
+    # clock can read the result rather than guess at it.
+    for _ in $(seq 1 30); do
+      [ "$(timedatectl show --property=NTPSynchronized --value)" = yes ] && break
+      sleep 1
+    done
+
+    if [ "$(timedatectl show --property=NTPSynchronized --value)" = yes ]; then
+      # show-timesync rather than show: the server actually in use is a property of
+      # timesyncd, not of timedated, and the two have separate property sets.
+      server=$(timedatectl show-timesync --property=ServerName --value 2>/dev/null || true)
+      echo "clock synchronised against ${server:-an NTP server}: $(date -u)"
+    else
+      echo "clock not synchronised yet after 30s; systemd-timesyncd is running and will" \\
+           "keep retrying. Check that UDP 123 is allowed out of this network." >&2
+    fi
   SHELL
 
   config.vm.provision "file",

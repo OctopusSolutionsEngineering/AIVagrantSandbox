@@ -37,6 +37,25 @@ it. The optional credentials carry no such rule and are readable by commands the
 runs — which is what makes them usable from `az` or `octo`, and what to weigh before
 adding a key here.
 
+# Clock synchronisation
+
+The guest keeps its clock against NTP with `systemd-timesyncd`, configured by the `ntp`
+provisioner in `/etc/systemd/timesyncd.conf.d/10-vagrant.conf`. It runs on every
+`vagrant up`, which is what corrects the drift a VM picks up between boots — most visibly
+after the host has slept, where the guest can come back hours behind and then fail TLS
+handshakes and `apt-get update` for reasons that look nothing like a clock problem.
+
+The servers are `NTP_SERVERS` and `NTP_FALLBACK_SERVERS` at the top of the `Vagrantfile`.
+Syncing needs UDP 123 out to the internet; on a network that blocks it the box still comes
+up and `vagrant up` says the clock is unsynchronised. Check it in the guest with:
+
+```bash
+vagrant ssh -c 'timedatectl status && timedatectl timesync-status'
+```
+
+If `chrony` or `ntpsec` is installed in the guest, it masks `systemd-timesyncd` and this
+provisioner leaves the clock to it rather than running two time daemons against each other.
+
 # Running Claude Code in a JetBrains IDE
 
 The `claude.sh` or `claude.ps1` script is expected to be called by the IDE when launching Claude Code.
