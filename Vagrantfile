@@ -284,15 +284,18 @@ Vagrant.configure("2") do |config|
     #     }
     #   },
     #   "model": {
-    #     "name": "qwen3.6:35b-a3b"
+    #     "name": "qwen3.8:27b"
     #   },
     #   "modelProviders": {
     #     "openai": [
     #       {
-    #         "id": "qwen3.6:35b-a3b",
+    #         "id": "qwen3.8:27b",
     #         "name": "Qwen (Local)",
     #         "baseUrl": "http://192.168.1.1:11434/v1",
-    #         "envKey": "OLLAMA_DUMMY_KEY"
+    #         "envKey": "OLLAMA_DUMMY_KEY",
+    #         "options": {
+    #            "reasoning_effort": "medium"
+    #         }
     #       }
     #     ]
     #   },
