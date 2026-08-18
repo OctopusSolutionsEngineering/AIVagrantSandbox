@@ -821,6 +821,39 @@ PROFILE
     echo "rewrote MCP host paths: $host_prefix -> $guest_prefix"
   SHELL
 
+  config.vm.provision "qwen-settings-paths",
+    type: "shell",
+    run: "always",
+    upload_path: "/home/vagrant/vagrant-shell",
+    inline: <<-SHELL
+#!/bin/bash
+    set -euo pipefail
+
+    command -v jq >/dev/null || { echo "jq is not installed yet; run the main provisioner first"; exit 1; }
+
+    config=#{AGENT_HOME}/.qwen/settings.json
+    [ -s "$config" ] || { echo "no $config to rewrite"; exit 0; }
+    jq -e . "$config" >/dev/null 2>&1 || { echo "$config is not valid JSON; leaving it alone"; exit 0; }
+
+    host_prefix=#{Shellwords.escape(HOST_HOME)}
+    guest_prefix=#{AGENT_HOME}
+
+    # No-op when host and guest share the same home directory name (e.g. a Linux
+    # host also running as user "claude").
+    [ "$host_prefix" = "$guest_prefix" ] && { echo "host and guest home are the same; skipping path rewrite"; exit 0; }
+
+    tmp=$(mktemp "$config.XXXXXX")
+    jq --arg host "$host_prefix" --arg guest "$guest_prefix" '
+      def retarget: (. / $host) | join($guest);
+      walk(if type == "string" then retarget else . end)
+    ' "$config" > "$tmp"
+    chown #{AGENT_USER}:#{AGENT_USER} "$tmp"
+    chmod 600 "$tmp"
+    mv "$tmp" "$config"
+
+    echo "rewrote qwen settings host paths: $host_prefix -> $guest_prefix"
+  SHELL
+
   config.vm.provision "claude-trust",
     type: "shell",
     run: "always",
