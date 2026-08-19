@@ -12,6 +12,134 @@ HOST_HOME = File.expand_path("~")
 # known before the request is made. Bump this to upgrade.
 PWSH_VERSION = "7.6.4"
 
+# The time servers the guest keeps its clock against. A VM's clock is only as good as the
+# last time anything corrected it: the box inherits the host clock at boot and then drifts,
+# and a host that sleeps or hibernates leaves the guest minutes or hours behind when it
+# comes back. That is worth fixing rather than living with, because a wrong clock breaks
+# things a long way from the clock — TLS handshakes fail on not-yet-valid certificates,
+# apt rejects release files as being from the future, and file timestamps written into the
+# synced tree come back wrong on the host.
+#
+# FallbackNTP is only consulted when nothing in NTP answers, so the two lists are a
+# preference order and not a pool to spread queries over.
+NTP_SERVERS          = %w[time.cloudflare.com time.google.com].freeze
+NTP_FALLBACK_SERVERS = %w[ntp.ubuntu.com pool.ntp.org].freeze
+
+# Credentials read from the host environment and pushed into the guest as root-owned
+# files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
+# because it is mandatory — without it there is no agent at all — whereas these are only
+# wanted by some of the tools the agent can reach, so a host that has not exported them
+# should still be able to bring the box up.
+OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY].freeze
+
+# One place to derive the file name from the variable name, so that the provisioner
+# writing the file, the launcher sourcing it, and the sandbox rule denying reads of it
+# cannot drift apart about where it lives.
+def credential_env_file(name)
+  "/etc/#{name.downcase}.env"
+end
+
+# Every agent is started the same way — check --dir, collect whichever credentials the
+# host provided, then drop from root to the agent account — so the launcher is written
+# once here and stamped out per agent instead of copied. Copies would drift, and the part
+# most worth not getting wrong twice is the part that handles credentials.
+#
+# `command` is an absolute path for agents that are not on the login shell's PATH. Ubuntu's
+# stock .bashrc returns before it reaches anything an installer appended, when the shell
+# is not interactive, so an agent installed under ~/.npm-global is unreachable by name
+# from the `bash -lc` below however the PATH was set up.
+#
+# `required_credentials` are sourced unconditionally and their absence is fatal;
+# `optional_credentials` are forwarded when present and passed over when not.
+def agent_launcher(name:, command:, required_credentials: [], optional_credentials: [])
+  required = required_credentials.map { |var, file|
+    ". #{file}\nagent_env+=(#{var}=\"$#{var}\")\n"
+  }.join
+
+  optional =
+    if optional_credentials.empty?
+      ""
+    else
+      pairs = optional_credentials.map { |var, file| "#{var}:#{file}" }.join(" ")
+      <<~OPTIONAL
+        # The optional credentials, as name:file pairs so this script never has to re-derive
+        # one from the other. Whatever the host provided is forwarded; whatever it did not is
+        # passed over, which is why the file is tested rather than assumed.
+        for entry in #{pairs}; do
+          var=${entry%%:*}
+          file=${entry#*:}
+          [ -r "$file" ] || continue
+          . "$file"
+          agent_env+=("$var=${!var-}")
+        done
+      OPTIONAL
+    end
+
+  # Joined here rather than interpolated as two slots, so that an agent with no required
+  # credentials does not get the blank line one would have left behind.
+  credentials = [required, optional].reject(&:empty?).join("\n").chomp
+
+  <<~LAUNCHER
+    #!/bin/bash
+    set -euo pipefail
+
+    # Credentials are read here and nowhere else. Their files are root-owned and mode 600,
+    # and this launcher is the last thing to run as root before the drop to the agent
+    # account, so this is the only point at which they can be picked up at all.
+    agent_env=()
+
+    #{credentials}
+
+    # --dir is the directory the agent should start in, given relative to the synced
+    # tree. #{name.sub("-agent", "")}.sh sends the directory it was called from on the host, which is the
+    # same tree under a different prefix, so the relative path is all that travels.
+    # Optional: without it the agent starts at the root, which is what a bare
+    # `sudo /usr/local/sbin/#{name}` in the guest still does. Anything left on the
+    # command line afterwards is passed through to the agent untouched.
+    code_root=#{AGENT_HOME}/Code
+    target=$code_root
+    rel=
+
+    if [ "${1:-}" = --dir ]; then
+      if [ "$#" -lt 2 ]; then
+        echo "#{name}: --dir needs a value" >&2
+        exit 2
+      fi
+      rel=$2
+      shift 2
+    fi
+
+    # Validated, but never fatal: a --dir that cannot be honoured should still get you a
+    # working agent at the root rather than no agent at all. The one thing worth being
+    # strict about is the shape — --dir names a location inside the synced tree by
+    # construction, so an absolute path or a .. component is a caller bug, and a caller
+    # bug that silently starts the agent somewhere outside the tree is worth refusing.
+    case $rel in
+      ""|.)
+        ;;
+      /*)
+        echo "#{name}: --dir must be relative to $code_root, ignoring '$rel'" >&2
+        ;;
+      ..|../*|*/..|*/../*)
+        echo "#{name}: --dir must stay inside $code_root, ignoring '$rel'" >&2
+        ;;
+      *)
+        if [ -d "$code_root/$rel" ]; then
+          target=$code_root/$rel
+        else
+          echo "#{name}: $code_root/$rel does not exist, starting in $code_root" >&2
+        fi
+        ;;
+    esac
+
+    # The target is handed to the inner shell as a positional argument rather than
+    # spliced into its script. That script is a single-quoted string, so a path pasted
+    # into it would be parsed by that shell as code.
+    exec sudo -u #{AGENT_USER} -H env "${agent_env[@]}" \\
+      bash -lc 'cd "$1" || exit 1; shift; exec #{command} "$@"' #{name} "$target" "$@"
+  LAUNCHER
+end
+
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"
 
@@ -65,6 +193,70 @@ Vagrant.configure("2") do |config|
           "  export ANTHROPIC_API_KEY='your-key-here'"
   end
 
+  # Reported rather than raised, for the reason given at OPTIONAL_HOST_CREDENTIALS. Each
+  # value is read once, here, so the script generated below is built from one snapshot of
+  # the host environment instead of consulting it again further down.
+  optional_credentials = OPTIONAL_HOST_CREDENTIALS.map do |name|
+    value = ENV[name]
+    if value.nil? || value.empty?
+      warn "#{name} is not set on the host, so the guest will not receive it. " \
+           "Export it before running vagrant up if the agent needs it."
+      nil
+    else
+      [name, value]
+    end
+  end.compact
+
+  # Quoted by Ruby rather than by hand, so that a key containing a space or a quote
+  # cannot arrive in the guest as shell syntax instead of as the key.
+  write_optional_credentials = optional_credentials.map do |name, value|
+    file = credential_env_file(name)
+    line = "export #{name}=#{Shellwords.escape(value)}"
+    "    install -o root -g root -m 600 /dev/null #{file}\n" \
+    "    printf '%s\\n' #{Shellwords.escape(line)} > #{file}\n"
+  end.join
+
+  # A key provisioned earlier and absent from the host environment now is left in place:
+  # this provisioner cannot tell a revoked key from a vagrant up run in a shell that
+  # happened not to export it, and deleting one on the strength of that guess costs more
+  # than keeping it. It does say so, though — a guest still running on a credential the
+  # host no longer has is worth hearing about.
+  report_stale_credentials =
+    (OPTIONAL_HOST_CREDENTIALS - optional_credentials.map(&:first)).map do |name|
+      file = credential_env_file(name)
+      "    if [ -e #{file} ]; then\n" \
+      "      echo \"#{name} is unset on the host, but #{file} from an earlier provision " \
+      "is still in place and will still be used; delete it in the guest to revoke it.\" >&2\n" \
+      "    fi\n"
+    end.join
+
+  optional_credential_pairs =
+    OPTIONAL_HOST_CREDENTIALS.map { |name| [name, credential_env_file(name)] }
+
+  # ANTHROPIC_API_KEY is deliberately absent from qwen-agent's set: Qwen has no use for
+  # it, and a launcher that never forwards it is one fewer place the key can reach.
+  agent_launchers = {
+    "claude-agent" => agent_launcher(
+      name: "claude-agent",
+      command: "claude",
+      required_credentials: [["ANTHROPIC_API_KEY", "/etc/anthropic_api_key.env"]],
+      optional_credentials: optional_credential_pairs,
+    ),
+    "qwen-agent" => agent_launcher(
+      name: "qwen-agent",
+      command: "#{AGENT_HOME}/.npm-global/bin/qwen",
+      optional_credentials: optional_credential_pairs,
+    ),
+  }
+
+  install_agent_launchers = agent_launchers.map { |launcher, body|
+    "    cat > /usr/local/sbin/#{launcher} <<'LAUNCHER'\n" \
+    "#{body}" \
+    "LAUNCHER\n\n" \
+    "    chown root:root /usr/local/sbin/#{launcher}\n" \
+    "    chmod 755 /usr/local/sbin/#{launcher}\n"
+  }.join("\n")
+
   config.vm.provision "shell",
     run: "always",
     upload_path: "/home/vagrant/vagrant-shell",
@@ -73,11 +265,138 @@ Vagrant.configure("2") do |config|
     set -euo pipefail
     install -o root -g root -m 600 /dev/null /etc/anthropic_api_key.env
     echo "export ANTHROPIC_API_KEY='#{anthropic_api_key}'" > /etc/anthropic_api_key.env
+
+    # The optional host credentials get the same treatment: one root-owned, mode 600 file
+    # each, rewritten from the host environment on every boot because this provisioner
+    # runs always. Lines below are generated, so nothing appears here for a key the host
+    # did not export.
+#{write_optional_credentials}#{report_stale_credentials}
+    # This is a dummy environment variable used by QWEN Code when running against
+    # a local Ollama server.
+    #
+    # This is an example ~/.qwen/settings.json file, assuming Ollama is running on 192.168.1.1:
+    # {
+    #   "security": {
+    #     "auth": {
+    #       "selectedType": "openai",
+    #       "apiKey": "sk-12345-dummy-password-ollama",
+    #       "baseUrl": "http://192.168.1.1:11434/v1"
+    #     }
+    #   },
+    #   "model": {
+    #     "name": "qwen3.8:27b"
+    #   },
+    #   "modelProviders": {
+    #     "openai": [
+    #       {
+    #         "id": "qwen3.8:27b",
+    #         "name": "Qwen (Local)",
+    #         "baseUrl": "http://192.168.1.1:11434/v1",
+    #         "envKey": "OLLAMA_DUMMY_KEY",
+    #         "options": {
+    #            "reasoning_effort": "medium"
+    #         }
+    #       }
+    #     ]
+    #   },
+    #   "$version": 4,
+    #   "tools": {
+    # 	  "approvalMode": "yolo"
+    #   },
+    #   "mcpServers": {
+    # 	  "idea":  {
+    # 	    "type": "sse",
+    # 		"url": "http://127.0.0.1:64342/sse"
+    # 	  }
+    #   },
+    #   "mcp": {
+    #     "excluded": []
+    #   }
+    # }
+    grep -q '^OLLAMA_DUMMY_KEY=' /etc/environment || echo 'OLLAMA_DUMMY_KEY=dummy' >> /etc/environment
+  SHELL
+
+  # Ordered ahead of the provisioner that installs everything, because apt is one of the
+  # things a wrong clock breaks: signature checks on a release file compare its dates
+  # against now, and a guest whose host slept can be far enough out for the whole
+  # install to fail. Runs always, so the correction happens on every boot rather than only
+  # on the one where the box was built — which is the point, since the drift accumulates
+  # between boots.
+  config.vm.provision "ntp",
+    type: "shell",
+    run: "always",
+    upload_path: "/home/vagrant/vagrant-shell",
+    inline: <<-SHELL
+#!/bin/bash
+    set -euo pipefail
+
+    # Nothing is installed in the normal case: systemd-timesyncd is part of the base
+    # system on Ubuntu. It is still checked for, because the providers below do not all
+    # use the same box and a minimised image can have dropped it.
+    if [ ! -e /usr/lib/systemd/system/systemd-timesyncd.service ]; then
+      apt-get update -y
+      apt-get install -y systemd-timesyncd
+    fi
+
+    # chrony and ntpsec both mask systemd-timesyncd when installed, since two daemons
+    # steering one clock is worse than either alone. If something did that deliberately,
+    # leave it be and say so rather than unmasking it and starting a fight over the clock.
+    if [ "$(systemctl is-enabled systemd-timesyncd 2>/dev/null || true)" = masked ]; then
+      echo "systemd-timesyncd is masked, so another time daemon is managing the clock;" \\
+           "leaving it alone. Configure #{NTP_SERVERS.join(" ")} there instead." >&2
+      exit 0
+    fi
+
+    # Written as a drop-in rather than into /etc/systemd/timesyncd.conf, so that a
+    # distribution upgrade replacing that file cannot take this configuration with it, and
+    # so `vagrant up` never has to edit a file it did not write.
+    install -d -o root -g root -m 755 /etc/systemd/timesyncd.conf.d
+    cat > /etc/systemd/timesyncd.conf.d/10-vagrant.conf <<'CONF'
+# Managed by the Vagrantfile; edits here are overwritten on the next `vagrant up`.
+[Time]
+NTP=#{NTP_SERVERS.join(" ")}
+FallbackNTP=#{NTP_FALLBACK_SERVERS.join(" ")}
+CONF
+    chown root:root /etc/systemd/timesyncd.conf.d/10-vagrant.conf
+    chmod 644 /etc/systemd/timesyncd.conf.d/10-vagrant.conf
+
+    # set-ntp enables and starts the service; the restart is what makes it read the
+    # drop-in just written, and also what corrects a large offset promptly — timesyncd
+    # steps the clock when it starts and only slews once it is running, so a guest that
+    # came back from a suspended host is right within seconds instead of hours.
+    timedatectl set-ntp true
+    systemctl restart systemd-timesyncd
+
+    # Reported, not enforced: the first sync needs UDP 123 out to the internet, and a
+    # network that does not allow it should still get a working box. Anything watching the
+    # clock can read the result rather than guess at it.
+    for _ in $(seq 1 30); do
+      [ "$(timedatectl show --property=NTPSynchronized --value)" = yes ] && break
+      sleep 1
+    done
+
+    if [ "$(timedatectl show --property=NTPSynchronized --value)" = yes ]; then
+      # show-timesync rather than show: the server actually in use is a property of
+      # timesyncd, not of timedated, and the two have separate property sets.
+      server=$(timedatectl show-timesync --property=ServerName --value 2>/dev/null || true)
+      echo "clock synchronised against ${server:-an NTP server}: $(date -u)"
+    else
+      echo "clock not synchronised yet after 30s; systemd-timesyncd is running and will" \\
+           "keep retrying. Check that UDP 123 is allowed out of this network." >&2
+    fi
   SHELL
 
   config.vm.provision "file",
     source: "~/.claude.json",
     destination: "/home/vagrant/claude.json.upload"
+
+  # Copy QWEN settings if they exist
+  qwen_settings_source = File.join(HOST_HOME, ".qwen", "settings.json")
+  if File.file?(qwen_settings_source)
+    config.vm.provision "file",
+      source: qwen_settings_source,
+      destination: "/home/vagrant/qwen-settings.json.upload"
+  end
 
   config.vm.provision "shell",
     upload_path: "/home/vagrant/vagrant-shell",
@@ -93,64 +412,7 @@ Vagrant.configure("2") do |config|
 
     install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 750 #{AGENT_HOME}
 
-    cat > /usr/local/sbin/claude-agent <<'LAUNCHER'
-#!/bin/bash
-set -euo pipefail
-
-. /etc/anthropic_api_key.env
-
-# --dir is the directory the agent should start in, given relative to the synced
-# tree. claude.sh sends the directory it was called from on the host, which is the
-# same tree under a different prefix, so the relative path is all that travels.
-# Optional: without it the agent starts at the root, which is what a bare
-# `sudo /usr/local/sbin/claude-agent` in the guest still does. Anything left on the
-# command line afterwards is passed through to claude untouched.
-code_root=#{AGENT_HOME}/Code
-target=$code_root
-rel=
-
-if [ "${1:-}" = --dir ]; then
-  if [ "$#" -lt 2 ]; then
-    echo "claude-agent: --dir needs a value" >&2
-    exit 2
-  fi
-  rel=$2
-  shift 2
-fi
-
-# Validated, but never fatal: a --dir that cannot be honoured should still get you a
-# working agent at the root rather than no agent at all. The one thing worth being
-# strict about is the shape — --dir names a location inside the synced tree by
-# construction, so an absolute path or a .. component is a caller bug, and a caller
-# bug that silently starts the agent somewhere outside the tree is worth refusing.
-case $rel in
-  ""|.)
-    ;;
-  /*)
-    echo "claude-agent: --dir must be relative to $code_root, ignoring '$rel'" >&2
-    ;;
-  ..|../*|*/..|*/../*)
-    echo "claude-agent: --dir must stay inside $code_root, ignoring '$rel'" >&2
-    ;;
-  *)
-    if [ -d "$code_root/$rel" ]; then
-      target=$code_root/$rel
-    else
-      echo "claude-agent: $code_root/$rel does not exist, starting in $code_root" >&2
-    fi
-    ;;
-esac
-
-# The target is handed to the inner shell as a positional argument rather than
-# spliced into its script. That script is a single-quoted string, so a path pasted
-# into it would be parsed by that shell as code.
-exec sudo -u #{AGENT_USER} -H env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-  bash -lc 'cd "$1" || exit 1; shift; exec claude "$@"' claude "$target" "$@"
-LAUNCHER
-
-    chown root:root /usr/local/sbin/claude-agent
-    chmod 755 /usr/local/sbin/claude-agent
-
+#{install_agent_launchers}
     for skel in /etc/skel/.[!.]*; do
       [ -f "$skel" ] || continue
       install -o #{AGENT_USER} -g #{AGENT_USER} -m 644 \
@@ -160,6 +422,14 @@ LAUNCHER
     install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
       /home/vagrant/claude.json.upload #{AGENT_HOME}/.claude.json
     rm -f /home/vagrant/claude.json.upload
+
+    # Only copy qwen settings if they were uploaded from the host.
+    if [ -s /home/vagrant/qwen-settings.json.upload ]; then
+      install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 700 "#{AGENT_HOME}/.qwen"
+      install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
+        /home/vagrant/qwen-settings.json.upload "#{AGENT_HOME}/.qwen/settings.json"
+    fi
+    rm -f /home/vagrant/qwen-settings.json.upload
 
     mkdir -p /etc/claude-code
     chown root:root /etc/claude-code
@@ -220,6 +490,7 @@ LAUNCHER
         "#{AGENT_HOME}/.claude.json",
         "#{AGENT_HOME}/.claude/settings*.json",
         "#{AGENT_HOME}/.claude/CLAUDE.md",
+        "#{AGENT_HOME}/.agents/AGENTS.md",
         "#{AGENT_HOME}/Code/.claude/settings*.json"
       ]
     },
@@ -285,9 +556,25 @@ Only `~/Code` is synced. If a host path falls outside it, do not invent a guest
 equivalent and do not create the directory to make the path resolve — say the
 file is not mounted into the sandbox and ask the user how to proceed.
 
+## Exception: JetBrains IDE tools (`mcp__idea__*`)
+
+These MCP tools address the user's IDE, not the sandbox filesystem, and the IDE
+works in host paths. Their path arguments — `projectPath`, `filePath`, and the
+like — take the **host** prefix, which inverts the rule above:
+
+- `projectPath` for a project inside the synced tree: `#{HOST_HOME}/Code/<project>`.
+- If you are about to hand an `#{AGENT_HOME}/Code/...` path to an IDE MCP
+  argument, you are on the wrong side of the mapping — rewrite it to the host
+  prefix first.
+
+If such a call fails with "`projectPath` ... doesn't correspond to any open
+project", the error includes the IDE's currently open projects — retry with one
+of those paths rather than the one you just passed.
+
 ## Translating back
 
-Use guest paths for every tool call, and when you quote a path in your answer.
+Use guest paths for every filesystem tool call — the JetBrains IDE tools above
+are the exception — and when you quote a path in your answer.
 The exception is when you are telling the user which file to open on the host
 (so their IDE can resolve it) — give the `#{HOST_HOME}/...` form there, and say
 which side of the mapping the path belongs to.
@@ -310,10 +597,17 @@ task genuinely needs root in this VM, say so and ask the user to run it from the
 host with `vagrant ssh`.
 MARKDOWN
 
-    chown -R #{AGENT_USER}:#{AGENT_USER} #{AGENT_HOME}/.claude
-    chown root:root #{AGENT_HOME}/.claude/settings.json #{AGENT_HOME}/.claude/CLAUDE.md
+    # Agents that read AGENTS.md rather than CLAUDE.md get the same briefing. The
+    # copy is taken here, immediately after the heredoc, so the two files cannot
+    # drift: both are rewritten from the same source on every provision.
+    mkdir -p #{AGENT_HOME}/.agents
+    cp #{AGENT_HOME}/.claude/CLAUDE.md #{AGENT_HOME}/.agents/AGENTS.md
+
+    chown -R #{AGENT_USER}:#{AGENT_USER} #{AGENT_HOME}/.claude #{AGENT_HOME}/.agents
+    chown root:root #{AGENT_HOME}/.claude/settings.json #{AGENT_HOME}/.claude/CLAUDE.md #{AGENT_HOME}/.agents/AGENTS.md
     chmod 444 #{AGENT_HOME}/.claude/settings.json
     chmod 444 #{AGENT_HOME}/.claude/CLAUDE.md
+    chmod 444 #{AGENT_HOME}/.agents/AGENTS.md
 
     touch /home/.mcp.json
     chown root:root /home/.mcp.json
@@ -387,6 +681,19 @@ PROFILE
     apt-get install -y nodejs
 
     npm install -g @anthropic-ai/claude-code
+
+    # qwen-code-no-telemetry — pinned to a no-telemetry fork version.
+    # Bump QWEN_VERSION here to upgrade; the script skips gracefully if
+    # the exact version is already present.
+    QWEN_VERSION="v0.21.11-no-telemetry"
+    if sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
+      'npm list -g qwen-code 2>/dev/null | grep -q "$QWEN_VERSION"'; then
+      echo "qwen-code $QWEN_VERSION is already installed"
+    else
+      echo "installing qwen-code $QWEN_VERSION ..."
+      sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
+        'curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.21.11-no-telemetry/install.sh | bash -s "$QWEN_VERSION"'
+    fi
   SHELL
 
   # PowerShell is installed from the tar.gz binary archive rather than from Microsoft's
@@ -512,6 +819,39 @@ PROFILE
     mv "$tmp" "$config"
 
     echo "rewrote MCP host paths: $host_prefix -> $guest_prefix"
+  SHELL
+
+  config.vm.provision "qwen-settings-paths",
+    type: "shell",
+    run: "always",
+    upload_path: "/home/vagrant/vagrant-shell",
+    inline: <<-SHELL
+#!/bin/bash
+    set -euo pipefail
+
+    command -v jq >/dev/null || { echo "jq is not installed yet; run the main provisioner first"; exit 1; }
+
+    config=#{AGENT_HOME}/.qwen/settings.json
+    [ -s "$config" ] || { echo "no $config to rewrite"; exit 0; }
+    jq -e . "$config" >/dev/null 2>&1 || { echo "$config is not valid JSON; leaving it alone"; exit 0; }
+
+    host_prefix=#{Shellwords.escape(HOST_HOME)}
+    guest_prefix=#{AGENT_HOME}
+
+    # No-op when host and guest share the same home directory name (e.g. a Linux
+    # host also running as user "claude").
+    [ "$host_prefix" = "$guest_prefix" ] && { echo "host and guest home are the same; skipping path rewrite"; exit 0; }
+
+    tmp=$(mktemp "$config.XXXXXX")
+    jq --arg host "$host_prefix" --arg guest "$guest_prefix" '
+      def retarget: (. / $host) | join($guest);
+      walk(if type == "string" then retarget else . end)
+    ' "$config" > "$tmp"
+    chown #{AGENT_USER}:#{AGENT_USER} "$tmp"
+    chmod 600 "$tmp"
+    mv "$tmp" "$config"
+
+    echo "rewrote qwen settings host paths: $host_prefix -> $guest_prefix"
   SHELL
 
   config.vm.provision "claude-trust",
