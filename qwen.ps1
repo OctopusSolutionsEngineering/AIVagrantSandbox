@@ -70,5 +70,5 @@ Write-Host "Project Directory: $startRelQ"
 # Handed to a root-owned launcher rather than to qwen directly, because the host
 # credentials the agent may need live in root-owned files that the claude account cannot
 # read: the launcher is what reads them, forwards them, and then drops to that account.
-vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ" -- -t -R 64342:127.0.0.1:64342
+vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ" -- -t -R 64342:127.0.0.1:64342 -L 127.0.0.1:7777:127.0.0.1:7777
 exit $LASTEXITCODE
