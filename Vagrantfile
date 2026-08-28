@@ -284,10 +284,7 @@ Vagrant.configure("2") do |config|
     #     }
     #   },
     #   "model": {
-    #     "name": "qwen3.8:27b",
-    #     "chatCompression": {
-    #       "contextPercentageThreshold": 0.70
-    #     }
+    #     "name": "qwen3.8:27b"
     #   },
     #   "modelProviders": {
     #     "openai": [
