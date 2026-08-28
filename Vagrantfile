@@ -284,7 +284,11 @@ Vagrant.configure("2") do |config|
     #     }
     #   },
     #   "model": {
-    #     "name": "qwen3.8:27b"
+    #     "name": "qwen3.8:27b",
+    #     "sessionTokenLimit": 128000,
+    #     "chatCompression": {
+    #       "contextPercentageThreshold": 0.70
+    #     }
     #   },
     #   "modelProviders": {
     #     "openai": [
