@@ -285,7 +285,6 @@ Vagrant.configure("2") do |config|
     #   },
     #   "model": {
     #     "name": "qwen3.8:27b",
-    #     "sessionTokenLimit": 128000,
     #     "chatCompression": {
     #       "contextPercentageThreshold": 0.70
     #     }
@@ -299,7 +298,10 @@ Vagrant.configure("2") do |config|
     #         "envKey": "OLLAMA_DUMMY_KEY",
     #         "options": {
     #            "reasoning_effort": "medium"
-    #         }
+    #         },
+    #         "generationConfig": {
+    #           "contextWindowSize": 128000
+    #         },
     #       }
     #     ]
     #   },
