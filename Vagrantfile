@@ -12,19 +12,6 @@ HOST_HOME = File.expand_path("~")
 # known before the request is made. Bump this to upgrade.
 PWSH_VERSION = "7.6.4"
 
-# The time servers the guest keeps its clock against. A VM's clock is only as good as the
-# last time anything corrected it: the box inherits the host clock at boot and then drifts,
-# and a host that sleeps or hibernates leaves the guest minutes or hours behind when it
-# comes back. That is worth fixing rather than living with, because a wrong clock breaks
-# things a long way from the clock — TLS handshakes fail on not-yet-valid certificates,
-# apt rejects release files as being from the future, and file timestamps written into the
-# synced tree come back wrong on the host.
-#
-# FallbackNTP is only consulted when nothing in NTP answers, so the two lists are a
-# preference order and not a pool to spread queries over.
-NTP_SERVERS          = %w[time.cloudflare.com time.google.com].freeze
-NTP_FALLBACK_SERVERS = %w[ntp.ubuntu.com pool.ntp.org].freeze
-
 # Credentials read from the host environment and pushed into the guest as root-owned
 # files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
 # because it is mandatory — without it there is no agent at all — whereas these are only
