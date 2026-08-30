@@ -70,5 +70,12 @@ Write-Host "Project Directory: $startRelQ"
 # Handed to a root-owned launcher rather than to qwen directly, because the host
 # credentials the agent may need live in root-owned files that the claude account cannot
 # read: the launcher is what reads them, forwards them, and then drops to that account.
-vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ" -- -t -R 64342:127.0.0.1:64342 -L 127.0.0.1:7777:127.0.0.1:7777
+#
+# Ollama listens on the host, not in the guest, so 11434 is a reverse forward like 64342
+# rather than a route to the host's LAN address: -R makes 127.0.0.1:11434 *inside* the
+# guest come out of the host's own loopback. A host Ollama left bound to localhost needs
+# no rebinding to 0.0.0.0 and no firewall hole, and the guest-side address stays the same
+# whatever the provider hands out for the host. Point the agent's baseUrl at
+# http://127.0.0.1:11434/v1.
+vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ" -- -t -R 64342:127.0.0.1:64342 -R 11434:127.0.0.1:11434 -L 127.0.0.1:7777:127.0.0.1:7777
 exit $LASTEXITCODE
