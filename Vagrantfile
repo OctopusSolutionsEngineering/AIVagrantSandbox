@@ -560,7 +560,8 @@ MARKDOWN
       ufw \
       btop \
       bubblewrap \
-      socat
+      socat \
+      golang
 
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
