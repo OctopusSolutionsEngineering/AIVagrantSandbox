@@ -1,5 +1,24 @@
 #!/bin/bash
 
+# Optional overrides for the model and the Ollama server, applied to the settings file
+# in the guest below. Both are left alone when not passed, which is how the IDE calls this.
+model=
+ollama_host=
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --model|--ollama-host)
+      [ $# -ge 2 ] || { echo "qwen.sh: $1 needs a value" >&2; exit 1; }
+      if [ "$1" = --model ]; then model=$2; else ollama_host=$2; fi
+      shift 2
+      ;;
+    *)
+      echo "qwen.sh: unknown argument: $1 (expected --model NAME or --ollama-host HOST)" >&2
+      exit 1
+      ;;
+  esac
+done
+
 # The working directory is set to the project currently open in the IDE.
 echo "Host project directory: $PWD"
 
@@ -43,6 +62,29 @@ start_rel_q=$(printf '%q' "$start_rel")
 cd ~/Code/AIVagrantSandbox || exit 1
 
 echo "Project Directory: $start_rel_q"
+
+# Edited in place in the guest, where jq is installed by the provisioner. The settings
+# file is the agent's own, so the edit persists for later runs; modelProviders.openai[0]
+# is the single local-Ollama entry the example settings.json in the Vagrantfile defines.
+#
+# Three accounts are involved and none of them can do the whole job: jq reads a file only
+# the claude account can open, the redirect writes as the vagrant account that ssh landed
+# on, and only root can then carry the result across, because /home/vagrant is mode 700
+# and claude cannot read back what was staged there. The install flags match the ones the
+# Vagrantfile uses for the same file, so the result is owned the same either way.
+if [ -n "$model" ] || [ -n "$ollama_host" ]; then
+  case $ollama_host in
+    ''|*://*) base_url=$ollama_host ;;
+    *)        base_url="http://$ollama_host:11434/v1" ;;
+  esac
+
+  settings=/home/claude/.qwen/settings.json
+  filter='(if $m == "" then . else .model.name = $m | .modelProviders.openai[0].id = $m end) | (if $u == "" then . else .security.auth.baseUrl = $u | .modelProviders.openai[0].baseUrl = $u end)'
+
+  echo "Updating $settings in the guest ..."
+  vagrant ssh -c "sudo -u claude jq --arg m '$model' --arg u '$base_url' '$filter' $settings > /home/vagrant/qwen-settings.json \
+    && sudo install -o claude -g claude -m 600 /home/vagrant/qwen-settings.json $settings && rm -f /home/vagrant/qwen-settings.json" || exit 1
+fi
 
 # Handed to a root-owned launcher rather than to qwen directly, because the host
 # credentials the agent may need live in root-owned files that the claude account cannot
