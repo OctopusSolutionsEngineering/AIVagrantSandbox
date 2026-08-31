@@ -5,25 +5,36 @@
 # passed, which is how the IDE calls this.
 $model = ''
 $reasoningEffort = ''
+$contextWindowSize = ''
 $ollamaHost = ''
 
 $i = 0
 while ($i -lt $args.Count) {
      $arg = [string] $args[$i]
-     if ($arg -eq '--model' -or $arg -eq '--reasoning-effort' -or $arg -eq '--ollama-host') {
+     if ($arg -eq '--model' -or $arg -eq '--reasoning-effort' -or $arg -eq '--ollama-host' -or $arg -eq '--context-window-size') {
          if ($i + 1 -ge $args.Count) {
              [Console]::Error.WriteLine("qwen.ps1: $arg needs a value")
              exit 1
          }
          if ($arg -eq '--model') { $model = [string] $args[$i + 1] }
          elseif ($arg -eq '--reasoning-effort') { $reasoningEffort = [string] $args[$i + 1] }
+         elseif ($arg -eq '--context-window-size') { $contextWindowSize = [string] $args[$i + 1] }
          else { $ollamaHost = [string] $args[$i + 1] }
          $i += 2
      }
      else {
-         [Console]::Error.WriteLine("qwen.ps1: unknown argument: $arg (expected --model NAME, --reasoning-effort VALUE, or --ollama-host HOST)")
+         [Console]::Error.WriteLine("qwen.ps1: unknown argument: $arg (expected --model NAME, --reasoning-effort VALUE, --context-window-size INTEGER, or --ollama-host HOST)")
          exit 1
      }
+}
+
+# Validate reasoning effort against the allowed values.
+if ($reasoningEffort -ne '') {
+    $validEfforts = @('none', 'low', 'medium', 'high', 'max')
+    if ($validEfforts -notcontains $reasoningEffort) {
+        [Console]::Error.WriteLine("qwen.ps1: --reasoning-effort must be one of: none, low, medium, high, max")
+        exit 1
+    }
 }
 
 # The working directory is set to the project currently open in the IDE.
@@ -102,17 +113,17 @@ Write-Host "Project Directory: $startRelQ"
 # on, and only root can then carry the result across, because /home/vagrant is mode 700
 # and claude cannot read back what was staged there. The install flags match the ones the
 # Vagrantfile uses for the same file, so the result is owned the same either way.
-if ($model -ne '' -or $reasoningEffort -ne '' -or $ollamaHost -ne '') {
+if ($model -ne '' -or $reasoningEffort -ne '' -or $contextWindowSize -ne '' -or $ollamaHost -ne '') {
      $baseUrl =
         if ($ollamaHost -eq '' -or $ollamaHost -match '://') { $ollamaHost }
         else { "http://${ollamaHost}:11434/v1" }
 
      $settings = '/home/claude/.qwen/settings.json'
-     # Single-quoted so that PowerShell leaves jq's $m, $r, and $u alone.
-     $filter = '(if $m == "" then . else .model.name = $m | .modelProviders.openai[0].id = $m end) | (if $r == "" then . else .modelProviders.openai[0].options.reasoning_effort = $r end) | (if $u == "" then . else .security.auth.baseUrl = $u | .modelProviders.openai[0].baseUrl = $u end)'
+      # Single-quoted so that PowerShell leaves jq's $c, $m, $r, and $u alone.
+      $filter = '(if $c == null then . else .modelProviders.openai[0].generationConfig.contextWindowSize = $c end) | (if $m == "" then . else .model.name = $m | .modelProviders.openai[0].id = $m end) | (if $r == "" then . else .modelProviders.openai[0].options.reasoning_effort = $r end) | (if $u == "" then . else .security.auth.baseUrl = $u | .modelProviders.openai[0].baseUrl = $u end)'
 
     Write-Host "Updating $settings in the guest ..."
-    vagrant ssh -c "sudo -u claude jq --arg m '$model' --arg r '$reasoningEffort' --arg u '$baseUrl' '$filter' $settings > /home/vagrant/qwen-settings.json && sudo install -o claude -g claude -m 600 /home/vagrant/qwen-settings.json $settings && rm -f /home/vagrant/qwen-settings.json"
+    vagrant ssh -c "sudo -u claude jq --argjson c '"$contextWindowSize"' --arg m '$model' --arg r '$reasoningEffort' --arg u '$baseUrl' '$filter' $settings > /home/vagrant/qwen-settings.json && sudo install -o claude -g claude -m 600 /home/vagrant/qwen-settings.json $settings && rm -f /home/vagrant/qwen-settings.json"
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

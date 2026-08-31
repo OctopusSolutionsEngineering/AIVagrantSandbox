@@ -63,6 +63,27 @@ sudo npm update -g @anthropic-ai/claude-code
 
 Run `qwen.sh` or `qwen.ps1` to launch QWEN Code.
 
+Both scripts accept optional override arguments that update the agent's configuration
+(`modelProviders.openai[0]`) in the guest's `~/.qwen/settings.json`:
+
+| Argument | Type | Description |
+| --- | --- | --- |
+| `--model NAME` | string | Override the model name (e.g. `gpt-oss:20b`) |
+| `--reasoning-effort VALUE` | enum | Set reasoning effort: `none`, `low`, `medium`, `high`, or `max` |
+| `--context-window-size INTEGER` | integer | Override the context window size |
+| `--ollama-host HOST` | string | Override the Ollama server (default from settings.json) |
+
+```bash
+# Launch with a specific model and reasoning effort
+./qwen.sh --model gpt-oss:20b --reasoning-effort high
+
+# Launch with a custom context window size and Ollama host
+./qwen.ps1 --context-window-size 128000 --ollama-host 192.168.1.100
+```
+
+Arguments are left alone when not passed, which is how the IDE typically calls these scripts.
+An unrecognized argument causes an error and non-zero exit.
+
 # Configuring IDE MCP server
 
 > [!WARNING]

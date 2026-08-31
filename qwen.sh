@@ -1,29 +1,39 @@
 #!/bin/bash
 
-# Optional overrides for the model, the reasoning effort, and the Ollama server,
-# applied to the settings file in the guest below.  All are left alone when not
-# passed, which is how the IDE calls this.
+# Optional overrides for the model, the reasoning effort, the context window size,
+# and the Ollama server, applied to the settings file in the guest below.
+# All are left alone when not passed, which is how the IDE calls this.
 model=
+context_window_size=
 reasoning_effort=
 ollama_host=
 
 while [ $# -gt 0 ]; do
   case $1 in
-      --model|--ollama-host|--reasoning-effort)
+      --context-window-size | --model | --ollama-host | --reasoning-effort)
          [ $# -ge 2 ] || { echo "qwen.sh: $1 needs a value" >&2; exit 1; }
         case $1 in
              --model)                 model=$2 ;;
+             --context-window-size)         context_window_size=$2 ;;
              --reasoning-effort)      reasoning_effort=$2 ;;
              --ollama-host)           ollama_host=$2 ;;
         esac
          shift 2
           ;;
           *)
-        echo "qwen.sh: unknown argument: $1 (expected --model NAME, --reasoning-effort VALUE, or --ollama-host HOST)" >&2
+         echo "qwen.sh: unknown argument: $1 (expected --context-window-size INTEGER, --model NAME, --reasoning-effort VALUE, or --ollama-host HOST)" >&2
         exit 1
           ;;
   esac
 done
+
+# Validate reasoning effort against the allowed values.
+if [ -n "$reasoning_effort" ]; then
+  case "$reasoning_effort" in
+       none | low | medium | high | max) ;;
+          *) echo "qwen.sh: --reasoning-effort must be one of: none, low, medium, high, max"; exit 1 ;;
+  esac
+fi
 
 # The working directory is set to the project currently open in the IDE.
 echo "Host project directory: $PWD"
@@ -73,22 +83,22 @@ echo "Project Directory: $start_rel_q"
 # file is the agent's own, so the edit persists for later runs; modelProviders.openai[0]
 # is the single local-Ollama entry the example settings.json in the Vagrantfile defines.
 #
-# Three accounts are involved and none of them can do the whole job: jq reads a file only
+# Four accounts are involved and none of them can do the whole job: jq reads a file only
 # the claude account can open, the redirect writes as the vagrant account that ssh landed
 # on, and only root can then carry the result across, because /home/vagrant is mode 700
 # and claude cannot read back what was staged there. The install flags match the ones the
 # Vagrantfile uses for the same file, so the result is owned the same either way.
-if [ -n "$model" ] || [ -n "$reasoning_effort" ] || [ -n "$ollama_host" ]; then
+if [ -n "$model" ] || [ -n "$context_window_size" ] || [ -n "$reasoning_effort" ] || [ -n "$ollama_host" ]; then
   case $ollama_host in
      ''|*://*) base_url=$ollama_host ;;
      *)        base_url="http://$ollama_host:11434/v1" ;;
   esac
 
   settings=/home/claude/.qwen/settings.json
-  filter='(if $m == "" then . else .model.name = $m | .modelProviders.openai[0].id = $m end) | (if $r == "" then . else .modelProviders.openai[0].options.reasoning_effort = $r end) | (if $u == "" then . else .security.auth.baseUrl = $u | .modelProviders.openai[0].baseUrl = $u end)'
+  filter='(if $c == null then . else .modelProviders.openai[0].generationConfig.contextWindowSize = $c end) | (if $m == "" then . else .model.name = $m | .modelProviders.openai[0].id = $m end) | (if $r == "" then . else .modelProviders.openai[0].options.reasoning_effort = $r end) | (if $u == "" then . else .security.auth.baseUrl = $u | .modelProviders.openai[0].baseUrl = $u end)'
 
   echo "Updating $settings in the guest ..."
-  vagrant ssh -c "sudo -u claude jq --arg m '$model' --arg r '$reasoning_effort' --arg u '$base_url' '$filter' $settings > /home/vagrant/qwen-settings.json \
+  vagrant ssh -c "sudo -u claude jq --argjson c '$context_window_size' --arg m '$model' --arg r '$reasoning_effort' --arg u '$base_url' '$filter' $settings > /home/vagrant/qwen-settings.json \
      && sudo install -o claude -g claude -m 600 /home/vagrant/qwen-settings.json $settings && rm -f /home/vagrant/qwen-settings.json" || exit 1
 fi
 
