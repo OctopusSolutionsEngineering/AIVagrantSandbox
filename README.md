@@ -46,6 +46,32 @@ agent. The sandbox deny rules are not generated from it, which is the other half
 point above: a credential added here is readable by commands the agent runs unless it is
 also denied in `/etc/claude-code/managed-settings.json`.
 
+# The synced code directory
+
+One host directory is mounted into the guest, and it is the only part of the host the
+agents can see. It defaults to `~/Code` and lands at `/home/claude/Code` in the guest.
+
+Not every machine keeps its checkouts there, so the host side is configurable. Set
+`AGENT_CODE_DIR` to an absolute path in the environment that runs `vagrant up`:
+
+```bash
+export AGENT_CODE_DIR="$HOME/workspace"
+vagrant up
+```
+
+`vagrant up` stops with a message naming the variable if the directory does not exist,
+rather than failing later inside the mount. The guest side stays `/home/claude/Code`
+whatever the host side is, so the paths baked into the managed settings and the trust file
+do not move; only the host prefix changes, and the `CLAUDE.md` that teaches the agents to
+translate between the two prefixes is generated from the same value.
+
+The launcher scripts read `AGENT_CODE_DIR` too, and they need the same answer the
+`Vagrantfile` had when the box came up: they translate the directory the IDE launched
+them from into its guest equivalent, and a mismatch would send the agent to the root of
+the synced tree instead. Exporting it from your shell profile keeps the two in step. Each
+launcher finds the `Vagrantfile` beside itself, so the clone can live anywhere on the
+host — including outside the synced directory.
+
 # Running Claude Code in a JetBrains IDE
 
 The `claude.sh` or `claude.ps1` script is expected to be called by the IDE when launching Claude Code.

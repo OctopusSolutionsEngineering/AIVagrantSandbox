@@ -7,6 +7,50 @@ AGENT_RUNTIME_DIR = "/run/user/#{AGENT_UID}"
 
 HOST_HOME = File.expand_path("~")
 
+# The host directory synced into the guest, and the only part of the host the agent can
+# see. ~/Code is the default because that is where this project keeps its checkouts, but
+# nothing depends on the name: point AGENT_CODE_DIR at another directory in the
+# environment that runs `vagrant up`, and everything that mentions the host side of the
+# mapping — the mount, both agent launchers, the translation table in the agent's
+# CLAUDE.md — follows from here.
+#
+# The guest side does not move when the host side does. Guest paths are baked into the
+# managed settings, the trust file and the agent's own instructions, and none of that
+# should change because someone else keeps their checkouts somewhere other than ~/Code.
+HOST_CODE_DIR  = File.expand_path(ENV.fetch("AGENT_CODE_DIR", "~/Code"))
+GUEST_CODE_DIR = "#{AGENT_HOME}/Code"
+
+# Vagrant would fail at mount time on its own, but it would fail talking about a path
+# nobody typed. Said here, while the message can still name the variable that chose the
+# directory, it is something to act on rather than a puzzle.
+#
+# Fatal only for the commands that are about to mount it: `vagrant halt`, `destroy` and
+# `status` have no use for the directory, and refusing to run them would leave a box that
+# cannot be stopped or cleaned up after the directory it synced was moved or removed.
+unless File.directory?(HOST_CODE_DIR)
+  message = "#{HOST_CODE_DIR} does not exist on the host. Create it, or set " \
+            "AGENT_CODE_DIR to the directory holding the checkouts to sync into the guest."
+
+  if %w[up reload provision resume].include?(ARGV.first)
+    raise "AIVagrantSandbox: #{message}"
+  else
+    warn "AIVagrantSandbox: #{message} Continuing, since this command does not need " \
+         "the synced directory."
+  end
+end
+
+# The same directory written the way the user is most likely to type it. Their shorthand
+# arrives in prompts verbatim, so the translation table has to cover that form too — but
+# only when it differs from the absolute path, which it does not for a synced directory
+# outside the host home.
+HOST_CODE_SHORTHAND_NOTE =
+  if HOST_CODE_DIR.start_with?("#{HOST_HOME}/")
+    "The user may write that directory as `~/#{HOST_CODE_DIR.delete_prefix("#{HOST_HOME}/")}`, " \
+    "which maps exactly the same way.\n"
+  else
+    ""
+  end
+
 # Pinned rather than resolved to "latest" at provision time, so two boxes built a month
 # apart get the same shell, and so the download can be checked against a digest that is
 # known before the request is made. Bump this to upgrade.
@@ -83,7 +127,7 @@ def agent_launcher(name:, command:, required_credentials: [], optional_credentia
     # Optional: without it the agent starts at the root, which is what a bare
     # `sudo /usr/local/sbin/#{name}` in the guest still does. Anything left on the
     # command line afterwards is passed through to the agent untouched.
-    code_root=#{AGENT_HOME}/Code
+    code_root=#{GUEST_CODE_DIR}
     target=$code_root
     rel=
 
@@ -136,20 +180,20 @@ Vagrant.configure("2") do |config|
 
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  config.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
+  config.vm.synced_folder HOST_CODE_DIR, GUEST_CODE_DIR,
     type: "nfs",
     nfs_version: 3,
     nfs_udp: false,
     mount_options: ["actimeo=1", "nolock", "tcp", "rw", "fsc"]
 
   config.vm.provider "parallels" do |prl, override|
-    override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
+    override.vm.synced_folder HOST_CODE_DIR, GUEST_CODE_DIR,
     type: nil,
     mount_options: ["share", "rw"]
   end
 
   config.vm.provider "hyperv" do |hv, override|
-    override.vm.synced_folder File.expand_path("~/Code"), "#{AGENT_HOME}/Code",
+    override.vm.synced_folder HOST_CODE_DIR, GUEST_CODE_DIR,
     type: "smb",
     mount_options: ["rw", "uid=#{AGENT_UID}", "gid=#{AGENT_UID}", "mfsymlinks"]
   end
@@ -411,7 +455,7 @@ Vagrant.configure("2") do |config|
         "#{AGENT_HOME}/.claude/settings*.json",
         "#{AGENT_HOME}/.claude/CLAUDE.md",
         "#{AGENT_HOME}/.agents/AGENTS.md",
-        "#{AGENT_HOME}/Code/.claude/settings*.json"
+        "#{GUEST_CODE_DIR}/.claude/settings*.json"
       ]
     },
     "credentials": {
@@ -448,8 +492,8 @@ JSON
 # Filesystem paths in this sandbox
 
 You are running inside a Vagrant guest VM. The user, their IDE, and their
-terminal are on the *host* machine. The host directory `#{HOST_HOME}/Code` is
-synced to `#{AGENT_HOME}/Code` in this guest — same files, different prefix.
+terminal are on the *host* machine. The host directory `#{HOST_CODE_DIR}` is
+synced to `#{GUEST_CODE_DIR}` in this guest — same files, different prefix.
 
 Any path that reaches you from the host side uses the host prefix and is NOT
 valid here. This includes:
@@ -464,15 +508,15 @@ Rewrite the prefix, keep the rest of the path unchanged:
 
 | Host path | Guest path to use |
 | --- | --- |
-| `#{HOST_HOME}/Code/<rest>` | `#{AGENT_HOME}/Code/<rest>` |
-| `~/Code/<rest>` | `#{AGENT_HOME}/Code/<rest>` |
-| `#{HOST_HOME}/<rest>` (outside `Code`) | not available in this sandbox |
+| `#{HOST_CODE_DIR}/<rest>` | `#{GUEST_CODE_DIR}/<rest>` |
+| any other host path, `#{HOST_HOME}` included | not available in this sandbox |
 
+#{HOST_CODE_SHORTHAND_NOTE}
 For example, if the IDE reports the open file as
-`#{HOST_HOME}/Code/MyProject/src/main.ts`, read and edit
-`#{AGENT_HOME}/Code/MyProject/src/main.ts`.
+`#{HOST_CODE_DIR}/MyProject/src/main.ts`, read and edit
+`#{GUEST_CODE_DIR}/MyProject/src/main.ts`.
 
-Only `~/Code` is synced. If a host path falls outside it, do not invent a guest
+Only `#{HOST_CODE_DIR}` is synced. If a host path falls outside it, do not invent a guest
 equivalent and do not create the directory to make the path resolve — say the
 file is not mounted into the sandbox and ask the user how to proceed.
 
@@ -482,8 +526,8 @@ These MCP tools address the user's IDE, not the sandbox filesystem, and the IDE
 works in host paths. Their path arguments — `projectPath`, `filePath`, and the
 like — take the **host** prefix, which inverts the rule above:
 
-- `projectPath` for a project inside the synced tree: `#{HOST_HOME}/Code/<project>`.
-- If you are about to hand an `#{AGENT_HOME}/Code/...` path to an IDE MCP
+- `projectPath` for a project inside the synced tree: `#{HOST_CODE_DIR}/<project>`.
+- If you are about to hand an `#{GUEST_CODE_DIR}/...` path to an IDE MCP
   argument, you are on the wrong side of the mapping — rewrite it to the host
   prefix first.
 
@@ -496,11 +540,11 @@ of those paths rather than the one you just passed.
 Use guest paths for every filesystem tool call — the JetBrains IDE tools above
 are the exception — and when you quote a path in your answer.
 The exception is when you are telling the user which file to open on the host
-(so their IDE can resolve it) — give the `#{HOST_HOME}/...` form there, and say
+(so their IDE can resolve it) — give the `#{HOST_CODE_DIR}/...` form there, and say
 which side of the mapping the path belongs to.
 
 The synced folder is mounted read-write, so edits you make under
-`#{AGENT_HOME}/Code` appear on the host immediately. These are the user's real
+`#{GUEST_CODE_DIR}` appear on the host immediately. These are the user's real
 working files, not a throwaway copy — treat them accordingly.
 
 # The account you are running as
@@ -726,8 +770,8 @@ PROFILE
     command -v jq >/dev/null || { echo "jq is not installed yet; run the main provisioner first"; exit 1; }
 
     config=#{AGENT_HOME}/.claude.json
-    host_prefix=#{Shellwords.escape("#{HOST_HOME}/Code")}
-    guest_prefix=#{AGENT_HOME}/Code
+    host_prefix=#{Shellwords.escape(HOST_CODE_DIR)}
+    guest_prefix=#{GUEST_CODE_DIR}
 
     [ -s "$config" ] || { echo "no $config to rewrite"; exit 0; }
     jq -e . "$config" >/dev/null 2>&1 || { echo "$config is not valid JSON; leaving it alone"; exit 0; }
@@ -796,14 +840,14 @@ PROFILE
     jq -e . "$config" >/dev/null 2>&1 || printf '{}' > "$config"
 
     tmp=$(mktemp "$config.XXXXXX")
-    jq '.projects["#{AGENT_HOME}/Code"] =
-          (.projects["#{AGENT_HOME}/Code"] // {}) + {"hasTrustDialogAccepted": true}' \
+    jq '.projects["#{GUEST_CODE_DIR}"] =
+          (.projects["#{GUEST_CODE_DIR}"] // {}) + {"hasTrustDialogAccepted": true}' \
       "$config" > "$tmp"
     chown #{AGENT_USER}:#{AGENT_USER} "$tmp"
     chmod 600 "$tmp"
     mv "$tmp" "$config"
 
-    echo "trusted workspace: #{AGENT_HOME}/Code"
+    echo "trusted workspace: #{GUEST_CODE_DIR}"
   SHELL
 
   config.vm.provision "apparmor-bwrap",
