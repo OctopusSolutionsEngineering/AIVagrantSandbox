@@ -663,7 +663,7 @@ PROFILE
     else
       echo "installing qwen-code $QWEN_VERSION ..."
       sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
-        'curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.21.11-no-telemetry/install.sh | bash -s "$QWEN_VERSION"'
+        'curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.24.3-no-telemetry/install.sh | bash -s v0.24.3-no-telemetry'
     fi
   SHELL
 
