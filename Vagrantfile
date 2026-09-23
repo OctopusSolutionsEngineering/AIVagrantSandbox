@@ -619,7 +619,8 @@ MARKDOWN
       maven \
       ca-certificates \
       gnupg \
-      lsb-release
+      lsb-release \
+      awscli
 
     # Add Azure CLI repository
     mkdir -p /etc/apt/keyrings
