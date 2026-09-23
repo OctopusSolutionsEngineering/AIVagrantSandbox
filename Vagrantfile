@@ -348,6 +348,15 @@ Vagrant.configure("2") do |config|
     #   }
     # }
     grep -q '^OLLAMA_DUMMY_KEY=' /etc/environment || echo 'OLLAMA_DUMMY_KEY=dummy' >> /etc/environment
+
+    # Azure Functions storage connection string pointing at a local Azurite emulator. The
+    # account key is Azurite's published well-known development key, not a secret, so this
+    # lives in a world-readable profile script rather than a mode 600 credential file.
+    cat > /etc/profile.d/azure-functions.sh <<'PROFILE'
+export AzureWebJobsStorage='DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;'
+PROFILE
+    chown root:root /etc/profile.d/azure-functions.sh
+    chmod 644 /etc/profile.d/azure-functions.sh
   SHELL
 
   config.vm.provision "file",
