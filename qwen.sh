@@ -124,4 +124,4 @@ fi
 # no rebinding to 0.0.0.0 and no firewall hole, and the guest-side address stays the same
 # whatever the provider hands out for the host. Point the agent's baseUrl at
 # http://127.0.0.1:11434/v1.
-vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $start_rel_q" -- -t -R 64342:127.0.0.1:64342 -R 11434:127.0.0.1:11434 -L 127.0.0.1:7777:127.0.0.1:7777
+vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $start_rel_q" -- -t -R 64342:127.0.0.1:64342 -R 11434:127.0.0.1:11434 -L 127.0.0.1:7777:127.0.0.1:7777 -L 127.0.0.1:10000:127.0.0.1:10000
