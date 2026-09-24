@@ -56,4 +56,4 @@ fi
 
 echo "Project Directory: $start_rel_q"
 
-vagrant ssh -c "exec sudo /usr/local/sbin/claude-agent --dir $start_rel_q" -- -t -R 64342:127.0.0.1:64342 -R 127.0.0.1:10000:127.0.0.1:10000
+vagrant ssh -c "exec sudo /usr/local/sbin/claude-agent --dir $start_rel_q" -- -t -R 64342:127.0.0.1:64342 -R 127.0.0.1:10000:127.0.0.1:10000 -R 127.0.0.1:10001:127.0.0.1:10001 -R 127.0.0.1:10002:127.0.0.1:10002
