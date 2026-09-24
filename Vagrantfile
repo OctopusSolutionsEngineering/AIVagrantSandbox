@@ -467,6 +467,12 @@ PROFILE
         "#{AGENT_HOME}/.claude/CLAUDE.md",
         "#{AGENT_HOME}/.agents/AGENTS.md",
         "#{GUEST_CODE_DIR}/.claude/settings*.json"
+      ],
+      "allowRead": [
+        "#{AGENT_HOME}/.azure"
+      ],
+      "allowWrite": [
+        "#{AGENT_HOME}/.azure"
       ]
     },
     "credentials": {
