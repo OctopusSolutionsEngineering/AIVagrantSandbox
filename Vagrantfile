@@ -385,6 +385,8 @@ PROFILE
 
     install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 750 #{AGENT_HOME}
 
+    install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 755 #{AGENT_HOME}/.azure/commands
+
 #{install_agent_launchers}
     for skel in /etc/skel/.[!.]*; do
       [ -f "$skel" ] || continue
