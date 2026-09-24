@@ -475,6 +475,9 @@ PROFILE
         "#{AGENT_HOME}/.azure"
       ]
     },
+    "network": {
+      "allowedDomains": ["127.0.0.1", "localhost"]
+    },
     "credentials": {
       "files": [
         { "path": "/etc/anthropic_api_key.env", "mode": "deny" },
