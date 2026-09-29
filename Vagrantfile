@@ -698,14 +698,20 @@ PROFILE
     # qwen-code-no-telemetry — pinned to a no-telemetry fork version.
     # Bump QWEN_VERSION here to upgrade; the script skips gracefully if
     # the exact version is already present.
-    QWEN_VERSION="v0.21.11-no-telemetry"
+    QWEN_VERSION="v0.24.6-no-telemetry"
     if sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
       'npm list -g qwen-code 2>/dev/null | grep -q "$QWEN_VERSION"'; then
       echo "qwen-code $QWEN_VERSION is already installed"
     else
       echo "installing qwen-code $QWEN_VERSION ..."
+      # The installer runs `tee /dev/stderr`, which reopens fd 2 via /proc. After sudo,
+      # fd 2 is still the root-owned pipe from Vagrant's SSH session, and the agent
+      # account may not open it. Routing stderr through `| cat` gives the installer a
+      # pipe created by the agent account instead; pipefail keeps its exit status.
       sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
-        'curl -fsSL https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/v0.24.3-no-telemetry/install.sh | bash -s v0.24.3-no-telemetry'
+        'set -o pipefail
+         curl -fsSL "https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/$QWEN_VERSION/install.sh" |
+           bash -s "$QWEN_VERSION" 2>&1 | cat'
     fi
   SHELL
 
