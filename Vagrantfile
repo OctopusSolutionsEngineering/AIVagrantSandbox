@@ -625,6 +625,7 @@ MARKDOWN
       golang \
       default-jdk \
       maven \
+      groovy \
       ca-certificates \
       gnupg \
       lsb-release \
