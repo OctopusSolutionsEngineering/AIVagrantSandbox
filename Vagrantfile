@@ -708,10 +708,14 @@ PROFILE
       # fd 2 is still the root-owned pipe from Vagrant's SSH session, and the agent
       # account may not open it. Routing stderr through `| cat` gives the installer a
       # pipe created by the agent account instead; pipefail keeps its exit status.
-      sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
+      #
+      # Qwen is optional, so a failed install is reported and provisioning carries on.
+      if ! sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
         'set -o pipefail
          curl -fsSL "https://raw.githubusercontent.com/undici77/qwen-code-no-telemetry/$QWEN_VERSION/install.sh" |
-           bash -s "$QWEN_VERSION" 2>&1 | cat'
+           bash -s "$QWEN_VERSION" 2>&1 | cat'; then
+        echo "WARNING: qwen-code $QWEN_VERSION failed to install; continuing without it" >&2
+      fi
     fi
   SHELL
 
