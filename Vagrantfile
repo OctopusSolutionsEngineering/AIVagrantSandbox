@@ -61,7 +61,7 @@ PWSH_VERSION = "7.6.4"
 # because it is mandatory — without it there is no agent at all — whereas these are only
 # wanted by some of the tools the agent can reach, so a host that has not exported them
 # should still be able to bring the box up.
-OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY].freeze
+OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY GITHUB_PACKAGE_READ].freeze
 
 # One place to derive the file name from the variable name, so that the provisioner
 # writing the file, the launcher sourcing it, and the sandbox rule denying reads of it
