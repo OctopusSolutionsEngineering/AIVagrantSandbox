@@ -409,6 +409,11 @@ PROFILE
     mkdir -p /etc/claude-code
     chown root:root /etc/claude-code
     chmod 755 /etc/claude-code
+
+    # The sandbox's allowWrite list in the JSON below (JSON takes no comments) names
+    # two directories. ~/.azure holds the Azure CLI login state. ~/.npm/_cacache is
+    # npm's download cache: without write access `npx` cannot fetch a package that
+    # is not already installed, and fails with EROFS.
     cat > /etc/claude-code/managed-settings.json <<'JSON'
 {
   "permissions": {
@@ -472,7 +477,8 @@ PROFILE
         "#{AGENT_HOME}/.azure"
       ],
       "allowWrite": [
-        "#{AGENT_HOME}/.azure"
+        "#{AGENT_HOME}/.azure",
+        "#{AGENT_HOME}/.npm/_cacache"
       ]
     },
     "credentials": {
