@@ -704,7 +704,7 @@ PROFILE
     # qwen-code-no-telemetry — pinned to a no-telemetry fork version.
     # Bump QWEN_VERSION here to upgrade; the script skips gracefully if
     # the exact version is already present.
-    QWEN_VERSION="v0.24.6-no-telemetry"
+    QWEN_VERSION="v0.25.0-no-telemetry"
     if sudo -u #{AGENT_USER} -H env QWEN_VERSION="$QWEN_VERSION" bash -lc \
       'npm list -g qwen-code 2>/dev/null | grep -q "$QWEN_VERSION"'; then
       echo "qwen-code $QWEN_VERSION is already installed"
