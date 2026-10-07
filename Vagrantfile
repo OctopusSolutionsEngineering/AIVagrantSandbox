@@ -275,7 +275,7 @@ Vagrant.configure("2") do |config|
     ),
     "qwen-agent" => agent_launcher(
       name: "qwen-agent",
-      command: "#{AGENT_HOME}/.npm-global/bin/qwen",
+      command: "#{AGENT_HOME}/.local/bin/qwen",
       optional_credentials: optional_credential_pairs,
     ),
   }
@@ -701,7 +701,7 @@ PROFILE
 
     npm install -g @anthropic-ai/claude-code
 
-    curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | bash
+    curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | sudo -u claude bash
   SHELL
 
   # PowerShell is installed from the tar.gz binary archive rather than from Microsoft's
