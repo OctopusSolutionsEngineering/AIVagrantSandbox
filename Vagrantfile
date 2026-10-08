@@ -201,6 +201,9 @@ Vagrant.configure("2") do |config|
   config.vm.provider "parallels" do |prl|
     prl.memory = 4096
     prl.cpus   = 6
+    # Keep the guest clock synced to the host via Parallels Tools, so it doesn't drift
+    # after the host sleeps or the VM is suspended (stale clocks break TLS and API auth).
+    prl.customize ["set", :id, "--time-sync", "on"]
   end
 
   config.vm.provider "libvirt" do |lv|
