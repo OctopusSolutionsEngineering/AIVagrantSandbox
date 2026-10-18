@@ -390,6 +390,8 @@ PROFILE
 
     install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 755 #{AGENT_HOME}/.azure/commands
 
+    install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 755 #{AGENT_HOME}/.m2
+
 #{install_agent_launchers}
     for skel in /etc/skel/.[!.]*; do
       [ -f "$skel" ] || continue
@@ -414,9 +416,11 @@ PROFILE
     chmod 755 /etc/claude-code
 
     # The sandbox's allowWrite list in the JSON below (JSON takes no comments) names
-    # two directories. ~/.azure holds the Azure CLI login state. ~/.npm/_cacache is
+    # three directories. ~/.azure holds the Azure CLI login state. ~/.npm/_cacache is
     # npm's download cache: without write access `npx` cannot fetch a package that
-    # is not already installed, and fails with EROFS.
+    # is not already installed, and fails with EROFS. ~/.m2 is Maven's local
+    # repository, and also where the Maven wrapper (mvnw) unpacks the Maven it
+    # downloads: without it both fail, and every build re-downloads its dependencies.
     cat > /etc/claude-code/managed-settings.json <<'JSON'
 {
   "permissions": {
@@ -481,7 +485,8 @@ PROFILE
       ],
       "allowWrite": [
         "#{AGENT_HOME}/.azure",
-        "#{AGENT_HOME}/.npm/_cacache"
+        "#{AGENT_HOME}/.npm/_cacache",
+        "#{AGENT_HOME}/.m2"
       ]
     },
     "credentials": {
