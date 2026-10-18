@@ -728,7 +728,9 @@ PROFILE
     chown root:root #{AGENT_HOME}/.claude/settings.json
     chmod 444 #{AGENT_HOME}/.claude/settings.json
 
-    curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | sudo -u claude bash
+    # Qwen Code is optional: a failed download or install should not abort provisioning.
+    curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | sudo -u claude bash \
+      || echo "WARNING: Qwen Code installation failed; continuing without it" >&2
   SHELL
 
   # PowerShell is installed from the tar.gz binary archive rather than from Microsoft's
