@@ -510,6 +510,14 @@ JSON
   },
   "sandbox": {
     "autoAllowBashIfSandboxed": true
+  },
+  "extraKnownMarketplaces": {
+    "dotnet-agent-skills": {
+      "source": { "source": "github", "repo": "dotnet/skills" }
+    }
+  },
+  "enabledPlugins": {
+    "dotnet-test@dotnet-agent-skills": true
   }
 }
 JSON
@@ -703,6 +711,17 @@ PROFILE
     apt-get install -y nodejs
 
     npm install -g @anthropic-ai/claude-code
+
+    # Plugins. The marketplace and the enabled flag are declared in the root-owned
+    # settings.json above, so the agent cannot switch them off; these commands only
+    # clone the marketplace and fetch the plugin into ~/.claude/plugins ahead of time.
+    # The CLI rewrites settings.json by replacing the file, which would leave it owned
+    # by the agent, so ownership and mode are put back afterwards.
+    ( cd #{AGENT_HOME} &&
+      sudo -u #{AGENT_USER} -H claude plugin marketplace add dotnet/skills &&
+      sudo -u #{AGENT_USER} -H claude plugin install dotnet-test@dotnet-agent-skills )
+    chown root:root #{AGENT_HOME}/.claude/settings.json
+    chmod 444 #{AGENT_HOME}/.claude/settings.json
 
     curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | sudo -u claude bash
   SHELL
