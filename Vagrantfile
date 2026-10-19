@@ -61,7 +61,7 @@ PWSH_VERSION = "7.6.4"
 # because it is mandatory — without it there is no agent at all — whereas these are only
 # wanted by some of the tools the agent can reach, so a host that has not exported them
 # should still be able to bring the box up.
-OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY GITHUB_PACKAGE_READ].freeze
+OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY GITHUB_PACKAGE_READ GH_TOKEN].freeze
 
 # One place to derive the file name from the variable name, so that the provisioner
 # writing the file, the launcher sourcing it, and the sandbox rule denying reads of it
@@ -684,8 +684,13 @@ MARKDOWN
     chmod go+r /etc/apt/keyrings/opentofu.gpg /etc/apt/keyrings/opentofu-repo.gpg
     echo "deb [signed-by=/etc/apt/keyrings/opentofu.gpg,/etc/apt/keyrings/opentofu-repo.gpg] https://packages.opentofu.org/opentofu/tofu/any/ any main" > /etc/apt/sources.list.d/opentofu.list
 
+    # GitHub CLI, from GitHub's apt repository, which also publishes amd64 and arm64.
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+    chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+
     apt-get update -y
-    apt-get install -y terraform tofu
+    apt-get install -y terraform tofu gh
 
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
