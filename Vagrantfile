@@ -673,6 +673,20 @@ MARKDOWN
     apt-get update -y
     apt-get install -y azure-cli
 
+    # Terraform and OpenTofu, both from their vendors' apt repositories, which publish
+    # amd64 and arm64 packages. The binaries are `terraform` and `tofu`, so they coexist.
+    curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --batch --yes --dearmor -o /etc/apt/keyrings/hashicorp.gpg
+    chmod go+r /etc/apt/keyrings/hashicorp.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list
+
+    curl -fsSL https://get.opentofu.org/opentofu.gpg -o /etc/apt/keyrings/opentofu.gpg
+    curl -fsSL https://packages.opentofu.org/opentofu/tofu/gpgkey | gpg --batch --yes --dearmor -o /etc/apt/keyrings/opentofu-repo.gpg
+    chmod go+r /etc/apt/keyrings/opentofu.gpg /etc/apt/keyrings/opentofu-repo.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/opentofu.gpg,/etc/apt/keyrings/opentofu-repo.gpg] https://packages.opentofu.org/opentofu/tofu/any/ any main" > /etc/apt/sources.list.d/opentofu.list
+
+    apt-get update -y
+    apt-get install -y terraform tofu
+
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
       | dd of=/etc/apt/keyrings/docker.asc
