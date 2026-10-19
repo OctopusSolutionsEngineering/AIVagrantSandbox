@@ -12,11 +12,19 @@ into the guest as root-owned files under `/etc`, refreshed on every boot.
 | `ANTHROPIC_API_KEY` | yes — `vagrant up` fails without it | `/etc/anthropic_api_key.env` |
 | `AZURE_STORAGE_ACCOUNT_KEY` | no | `/etc/azure_storage_account_key.env` |
 | `OCTOPUS_API_KEY` | no | `/etc/octopus_api_key.env` |
+| `OCTOPUS_APIKEY` | no | `/etc/octopus_apikey.env` |
+| `OCTOPUS_URL` | no | `/etc/octopus_url.env` |
+| `GITHUB_PACKAGE_READ` | no | `/etc/github_package_read.env` |
+| `GH_TOKEN` | no | `/etc/gh_token.env` |
 
 ```bash
 export ANTHROPIC_API_KEY='your-key-here'
 export AZURE_STORAGE_ACCOUNT_KEY='your-key-here'
 export OCTOPUS_API_KEY='your-key-here'
+export OCTOPUS_APIKEY='your-key-here'
+export OCTOPUS_URL='https://your-instance.octopus.app'
+export GITHUB_PACKAGE_READ='your-token-here'
+export GH_TOKEN='your-token-here'
 vagrant up
 ```
 
