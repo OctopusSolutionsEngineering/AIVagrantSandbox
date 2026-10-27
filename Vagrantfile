@@ -421,6 +421,14 @@ PROFILE
     # is not already installed, and fails with EROFS. ~/.m2 is Maven's local
     # repository, and also where the Maven wrapper (mvnw) unpacks the Maven it
     # downloads: without it both fail, and every build re-downloads its dependencies.
+    #
+    # excludedCommands runs `terraform` and `tofu` outside the sandbox. On Linux the
+    # sandbox's seccomp filter blocks every socket(AF_UNIX, ...) call, and both tools
+    # talk to their provider plugins over a Unix socket, so inside the sandbox every
+    # command that loads a provider fails with "Unrecognized remote plugin message"
+    # (the plugin logs "listen unix ...: socket: operation not permitted"). Unix
+    # sockets cannot be allowed by path on Linux, and sandbox.network.allowAllUnixSockets
+    # would lift the block for every command, so only these two are excluded.
     cat > /etc/claude-code/managed-settings.json <<'JSON'
 {
   "permissions": {
@@ -465,7 +473,9 @@ PROFILE
     "enabled": true,
     "allowUnsandboxedCommands": false,
     "excludedCommands": [
-      "docker *"
+      "docker *",
+      "terraform *",
+      "tofu *"
     ],
     "allowManagedReadPathsOnly": true,
     "filesystem": {
