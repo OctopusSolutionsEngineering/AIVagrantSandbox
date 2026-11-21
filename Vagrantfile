@@ -403,6 +403,8 @@ PROFILE
 
     install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 755 #{AGENT_HOME}/.m2
 
+    install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 755 /etc/octopus #{AGENT_HOME}/.octopus
+
 #{install_agent_launchers}
     for skel in /etc/skel/.[!.]*; do
       [ -f "$skel" ] || continue
@@ -435,6 +437,8 @@ PROFILE
     # ~/.dotnet is where the .NET CLI records its first-run state and installs global
     # tools, ~/.nuget/packages is NuGet's package folder, and ~/.local/share/NuGet
     # holds its HTTP and plugin caches: without them `dotnet restore` cannot run.
+    # ~/.octopus and /etc/octopus are the agent-owned directories created above for
+    # Octopus tooling and its configuration.
     #
     # excludedCommands runs `terraform` and `tofu` outside the sandbox. On Linux the
     # sandbox's seccomp filter blocks every socket(AF_UNIX, ...) call, and both tools
@@ -516,7 +520,9 @@ PROFILE
         "#{AGENT_HOME}/.m2",
         "#{AGENT_HOME}/.dotnet",
         "#{AGENT_HOME}/.nuget",
-        "#{AGENT_HOME}/.local/share/NuGet"
+        "#{AGENT_HOME}/.local/share/NuGet",
+        "#{AGENT_HOME}/.octopus",
+        "/etc/octopus"
       ]
     },
     "credentials": {
