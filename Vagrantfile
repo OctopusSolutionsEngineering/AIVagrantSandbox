@@ -56,6 +56,10 @@ HOST_CODE_SHORTHAND_NOTE =
 # known before the request is made. Bump this to upgrade.
 PWSH_VERSION = "7.6.4"
 
+# The .NET SDK channel handed to dotnet-install.sh. A channel rather than an exact
+# version, so a reprovision picks up the latest patch of the same major release.
+DOTNET_CHANNEL = "10.0"
+
 # Credentials read from the host environment and pushed into the guest as root-owned
 # files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
 # because it is mandatory — without it there is no agent at all — whereas these are only
@@ -416,11 +420,14 @@ PROFILE
     chmod 755 /etc/claude-code
 
     # The sandbox's allowWrite list in the JSON below (JSON takes no comments) names
-    # three directories. ~/.azure holds the Azure CLI login state. ~/.npm/_cacache is
+    # these directories. ~/.azure holds the Azure CLI login state. ~/.npm/_cacache is
     # npm's download cache: without write access `npx` cannot fetch a package that
     # is not already installed, and fails with EROFS. ~/.m2 is Maven's local
     # repository, and also where the Maven wrapper (mvnw) unpacks the Maven it
     # downloads: without it both fail, and every build re-downloads its dependencies.
+    # ~/.dotnet is where the .NET CLI records its first-run state and installs global
+    # tools, ~/.nuget/packages is NuGet's package folder, and ~/.local/share/NuGet
+    # holds its HTTP and plugin caches: without them `dotnet restore` cannot run.
     #
     # excludedCommands runs `terraform` and `tofu` outside the sandbox. On Linux the
     # sandbox's seccomp filter blocks every socket(AF_UNIX, ...) call, and both tools
@@ -496,7 +503,10 @@ PROFILE
       "allowWrite": [
         "#{AGENT_HOME}/.azure",
         "#{AGENT_HOME}/.npm/_cacache",
-        "#{AGENT_HOME}/.m2"
+        "#{AGENT_HOME}/.m2",
+        "#{AGENT_HOME}/.dotnet",
+        "#{AGENT_HOME}/.nuget",
+        "#{AGENT_HOME}/.local/share/NuGet"
       ]
     },
     "credentials": {
@@ -701,6 +711,15 @@ MARKDOWN
 
     apt-get update -y
     apt-get install -y terraform tofu gh
+
+    # .NET SDK, from Microsoft's dotnet-install script rather than an apt repository:
+    # packages.microsoft.com publishes the SDK for amd64 only, and Ubuntu's own feed
+    # lags behind the current LTS, whereas the script fetches the matching build for
+    # either instruction set. Installed under /usr/share/dotnet and linked onto PATH.
+    curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+    bash /tmp/dotnet-install.sh --channel #{DOTNET_CHANNEL} --install-dir /usr/share/dotnet
+    rm -f /tmp/dotnet-install.sh
+    ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet
 
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
