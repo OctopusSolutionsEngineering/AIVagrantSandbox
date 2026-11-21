@@ -138,6 +138,14 @@ Enable the MCP server by navigating to Tools > MCP Server.
 The following dependencies are required for the vagrant libvirt provider:
 
 ```
-sudo rpm-ostree install libvirt-devel ruby-devel libxslt-devel libxml2-devel
+rpm-ostree install \
+  qemu-kvm \
+  libvirt-daemon-driver-qemu \
+  libvirt-daemon-config-network \
+  libvirt-daemon-driver-network \
+  libvirt-daemon-driver-storage-core \
+  libvirt-client \
+  libvirt-devel ruby-devel libxslt-devel libxml2-devel
+
 vagrant plugin install vagrant-libvirt
 ```
