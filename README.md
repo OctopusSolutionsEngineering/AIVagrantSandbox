@@ -148,4 +148,9 @@ rpm-ostree install \
   libvirt-devel ruby-devel libxslt-devel libxml2-devel
 
 vagrant plugin install vagrant-libvirt
+
+grep -E '^libvirt:' /etc/group || grep -E '^libvirt:' /usr/lib/group | sudo tee -a /etc/group
+sudo usermod -aG libvirt "$USER"
+sudo systemctl enable --now virtqemud.socket virtnetworkd.socket virtstoraged.socket
+
 ```
