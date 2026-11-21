@@ -15,7 +15,10 @@
         "id": "qwen3.8-flash-next-iq3_s",
         "name": "Qwen (Local)",
         "baseUrl": "http://localhost:8080/v1",
-        "envKey": "OLLAMA_DUMMY_KEY"
+        "envKey": "OLLAMA_DUMMY_KEY",
+        "generationConfig": {
+          "contextWindowSize": 256000
+        }
       }
     ]
   },
