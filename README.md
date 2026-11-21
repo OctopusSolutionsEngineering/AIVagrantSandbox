@@ -132,3 +132,11 @@ In InteliJ IDEA and other JetBrains IDEs, you can configure the script to be cal
 Enable the MCP server by navigating to Tools > MCP Server.
 
 ![MCP Server](mcp.png)
+
+# Bazzite setup
+
+The following dependencies are required for the vagrant libvirt provider:
+
+```
+sudo rpm-ostree install libvirt-devel ruby-devel libxslt-devel libxml2-devel
+```
