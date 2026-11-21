@@ -16,6 +16,7 @@ into the guest as root-owned files under `/etc`, refreshed on every boot.
 | `OCTOPUS_URL` | no | `/etc/octopus_url.env` |
 | `GITHUB_PACKAGE_READ` | no | `/etc/github_package_read.env` |
 | `GH_TOKEN` | no | `/etc/gh_token.env` |
+| `OCTOPUS_SERVER_BASE64_LICENSE` | no | `/etc/octopus_server_base64_license.env` |
 
 ```bash
 export ANTHROPIC_API_KEY='your-key-here'
@@ -25,6 +26,7 @@ export OCTOPUS_APIKEY='your-key-here'
 export OCTOPUS_URL='https://your-instance.octopus.app'
 export GITHUB_PACKAGE_READ='your-token-here'
 export GH_TOKEN='your-token-here'
+export OCTOPUS_SERVER_BASE64_LICENSE='your-base64-license-here'
 vagrant up
 ```
 
