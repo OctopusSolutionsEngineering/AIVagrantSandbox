@@ -391,7 +391,9 @@ PROFILE
 #!/bin/bash
     set -euo pipefail
 
-    useradd \
+    # Guarded so that `vagrant provision` can rerun this script on a box that already
+    # has the account.
+    id -u #{AGENT_USER} >/dev/null 2>&1 || useradd \
       --uid #{AGENT_UID} \
       --home-dir #{AGENT_HOME} \
       --shell /bin/bash \
@@ -724,12 +726,12 @@ PROFILE
         curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
     fi
     unzip -q awscliv2.zip
-    ./aws/install
+    ./aws/install --update
     rm -rf awscliv2.zip aws/
 
     # Add Azure CLI repository
     mkdir -p /etc/apt/keyrings
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /etc/apt/keyrings/microsoft.gpg
     chmod go+r /etc/apt/keyrings/microsoft.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli $(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list
 
