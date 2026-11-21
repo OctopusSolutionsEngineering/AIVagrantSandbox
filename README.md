@@ -153,4 +153,9 @@ grep -E '^libvirt:' /etc/group || grep -E '^libvirt:' /usr/lib/group | sudo tee 
 sudo usermod -aG libvirt "$USER"
 sudo systemctl enable --now virtqemud.socket virtnetworkd.socket virtstoraged.socket
 
+sudo firewall-cmd --zone=libvirt --add-service=nfs --add-service=rpc-bind --add-service=mountd --permanent
+sudo firewall-cmd --reload
+sudo systemctl enable --now nfs-server
+
+
 ```
