@@ -139,4 +139,5 @@ The following dependencies are required for the vagrant libvirt provider:
 
 ```
 sudo rpm-ostree install libvirt-devel ruby-devel libxslt-devel libxml2-devel
+vagrant plugin install vagrant-libvirt
 ```
