@@ -1,0 +1,45 @@
+{
+  "security": {
+    "auth": {
+      "selectedType": "openai",
+      "apiKey": "sk-12345-dummy-password-ollama",
+      "baseUrl": "http://192.168.1.118:11434/v1"
+    }
+  },
+  "model": {
+    "name": "qwen3.8:27b"
+  },
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen3.8:27b",
+        "name": "Qwen (Local)",
+        "baseUrl": "http://192.168.1.118:11434/v1",
+        "envKey": "OLLAMA_DUMMY_KEY"
+      }
+    ]
+  },
+  "$version": 4,
+  "tools": {
+    "approvalMode": "yolo"
+  },
+  "permissions": {
+    "deny": [
+      "git *"
+    ],
+    "allow": [
+      "Bash(mvn *)",
+      "Agent(general-purpose)",
+      "Bash(./mvnw *)"
+    ]
+  },
+  "mcpServers": {
+    "idea":  {
+      "type": "sse",
+      "url": "http://127.0.0.1:64342/sse"
+    }
+  },
+  "mcp": {
+    "excluded": []
+  }
+}
