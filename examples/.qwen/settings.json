@@ -1,4 +1,7 @@
 {
+  "context": {
+    "autoCompactThreshold": 0.85
+  },
   "security": {
     "auth": {
       "selectedType": "openai",
