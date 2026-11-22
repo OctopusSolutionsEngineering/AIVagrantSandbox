@@ -129,14 +129,21 @@ fi
 # no rebinding to 0.0.0.0 and no firewall hole, and the guest-side address stays the same
 # whatever the provider hands out for the host. Point the agent's baseUrl at
 # http://127.0.0.1:11434/v1.
-# With --disable-external-access, the guest's firewall is told to refuse everything the
-# claude account sends anywhere but the loopback interface, for the length of the session.
+# With --disable-external-access, the guest's firewall is told to refuse every new outbound
+# connection except over the loopback interface, for the length of the session. Only the
+# root and vagrant accounts are exempt, so a new account (or a service the agent can drive)
+# is blocked by default rather than needing to be listed.
 #
-# Matching on the owner rather than on the interface as a whole is what keeps the rest
-# working: sshd and the launcher run as other accounts and are untouched, so the ssh
-# session carrying this terminal stays up. The -R forwards come out of sshd onto the
-# guest's loopback and the -L target is a loopback listener, so both are loopback traffic
-# and pass. The claude account has no sudo, so it cannot lift the rule itself.
+# It is deliberately not an owner-match on the claude account alone: claude is a Postgres
+# superuser, so `COPY ... FROM PROGRAM` would run curl as the postgres account and walk
+# straight past such a rule. Default-deny closes that, and the same goes for DNS via
+# systemd-resolved.
+#
+# What keeps the session working: established/related traffic is accepted, which covers the
+# replies on the ssh connection carrying this terminal; sshd runs as root; the -R forwards
+# come out of sshd onto the guest's loopback and the -L target is a loopback listener. The
+# claude account has no sudo, so it cannot lift the rule itself. Side effect: DHCP lease
+# renewal (systemd-networkd) is blocked while the session runs.
 #
 # The rules are removed again on the way out, because rules left behind would silently
 # cap the next, ordinary launch. They are also cleared before being added, in case a
@@ -151,11 +158,10 @@ if [ "$disable_external_access" = 1 ]; then
   echo "External network access disabled for the agent (loopback and ssh only)"
   guest_script=$(cat <<SCRIPT
 chain=AGENT_NO_EXTERNAL
-uid=\$(id -u claude) || exit 1
 cleanup() {
   for ipt in iptables ip6tables; do
     command -v \$ipt >/dev/null 2>&1 || continue
-    while \$ipt -D OUTPUT -m owner --uid-owner \$uid -j \$chain 2>/dev/null; do :; done
+    while \$ipt -D OUTPUT -j \$chain 2>/dev/null; do :; done
     \$ipt -F \$chain 2>/dev/null
     \$ipt -X \$chain 2>/dev/null
   done
@@ -166,8 +172,11 @@ for ipt in iptables ip6tables; do
   command -v \$ipt >/dev/null 2>&1 || { echo "qwen.sh: \$ipt is not installed in the guest" >&2; exit 1; }
   \$ipt -N \$chain \\
     && \$ipt -A \$chain -o lo -j ACCEPT \\
+    && \$ipt -A \$chain -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT \\
+    && \$ipt -A \$chain -m owner --uid-owner 0 -j ACCEPT \\
+    && \$ipt -A \$chain -m owner --uid-owner vagrant -j ACCEPT \\
     && \$ipt -A \$chain -j REJECT \\
-    && \$ipt -I OUTPUT -m owner --uid-owner \$uid -j \$chain \\
+    && \$ipt -I OUTPUT -j \$chain \\
     || { echo "qwen.sh: could not install the \$ipt rules in the guest" >&2; exit 1; }
 done
 /usr/local/sbin/qwen-agent --dir $start_rel_q

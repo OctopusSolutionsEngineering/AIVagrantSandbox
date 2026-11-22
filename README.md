@@ -124,11 +124,12 @@ Both scripts accept optional override arguments that update the agent's configur
 
 ## Disabling external access
 
-`--disable-external-access` adds guest firewall rules (iptables/ip6tables, matched on the
-`claude` user) that reject all of the agent's traffic except over the loopback interface, for
-the length of the session. SSH keeps working, as do all the forwarded ports (the `-R` ports
+`--disable-external-access` adds guest firewall rules (iptables/ip6tables) that reject all
+new outbound connections except over the loopback interface, for the length of the session.
+Only `root` and `vagrant` are exempt, so processes run by other accounts (for example
+`postgres`, via `COPY ... FROM PROGRAM`) can't be used to get around it. SSH keeps working, as do all the forwarded ports (the `-R` ports
 and the `-L` port), because they are loopback traffic in the guest. The rules are removed when
-the session ends. If the rules cannot be installed, the agent is not started.
+the session ends. DHCP lease renewal is blocked while they are in place. If the rules cannot be installed, the agent is not started.
 
 Because only loopback is allowed, an `--ollama-host` pointing at another machine will be
 unreachable; leave Ollama on the host's localhost via the `11434` forward instead. Concurrent

@@ -151,19 +151,19 @@ if ($model -ne '' -or $reasoningEffort -ne '' -or $contextWindowSize -ne '' -or 
 # no rebinding to 0.0.0.0 and no firewall hole, and the guest-side address stays the same
 # whatever the provider hands out for the host. Point the agent's baseUrl at
 # http://127.0.0.1:11434/v1.
-# With --disable-external-access, the guest's firewall is told to refuse everything the
-# claude account sends anywhere but the loopback interface, for the length of the session.
-# Matching on the owner keeps sshd, and so this terminal and the -R/-L forwards (all
-# loopback traffic in the guest), working. See qwen.sh for the full reasoning.
+# With --disable-external-access, the guest's firewall is told to refuse every new outbound
+# connection except over loopback, for the length of the session. Only root and vagrant are
+# exempt: default-deny rather than an owner-match on claude, because claude is a Postgres
+# superuser and COPY ... FROM PROGRAM would run curl as the postgres account. SSH and the
+# -R/-L forwards keep working (established traffic, sshd as root, loopback). See qwen.sh.
 if ($disableExternalAccess) {
     Write-Host 'External network access disabled for the agent (loopback and ssh only)'
     $guestScript = @"
 chain=AGENT_NO_EXTERNAL
-uid=`$(id -u claude) || exit 1
 cleanup() {
   for ipt in iptables ip6tables; do
     command -v `$ipt >/dev/null 2>&1 || continue
-    while `$ipt -D OUTPUT -m owner --uid-owner `$uid -j `$chain 2>/dev/null; do :; done
+    while `$ipt -D OUTPUT -j `$chain 2>/dev/null; do :; done
     `$ipt -F `$chain 2>/dev/null
     `$ipt -X `$chain 2>/dev/null
   done
@@ -174,8 +174,11 @@ for ipt in iptables ip6tables; do
   command -v `$ipt >/dev/null 2>&1 || { echo "qwen.ps1: `$ipt is not installed in the guest" >&2; exit 1; }
   `$ipt -N `$chain \
     && `$ipt -A `$chain -o lo -j ACCEPT \
+    && `$ipt -A `$chain -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT \
+    && `$ipt -A `$chain -m owner --uid-owner 0 -j ACCEPT \
+    && `$ipt -A `$chain -m owner --uid-owner vagrant -j ACCEPT \
     && `$ipt -A `$chain -j REJECT \
-    && `$ipt -I OUTPUT -m owner --uid-owner `$uid -j `$chain \
+    && `$ipt -I OUTPUT -j `$chain \
     || { echo "qwen.ps1: could not install the `$ipt rules in the guest" >&2; exit 1; }
 done
 /usr/local/sbin/qwen-agent --dir $startRelQ
