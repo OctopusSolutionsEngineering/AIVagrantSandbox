@@ -17,6 +17,7 @@ into the guest as root-owned files under `/etc`, refreshed on every boot.
 | `GITHUB_PACKAGE_READ` | no | `/etc/github_package_read.env` |
 | `GH_TOKEN` | no | `/etc/gh_token.env` |
 | `OCTOPUS_SERVER_BASE64_LICENSE` | no | `/etc/octopus_server_base64_license.env` |
+| `GIT_SERVICE_TOKEN` | no | `/etc/git_service_token.env` |
 
 ```bash
 export ANTHROPIC_API_KEY='your-key-here'
@@ -27,6 +28,7 @@ export OCTOPUS_URL='https://your-instance.octopus.app'
 export GITHUB_PACKAGE_READ='your-token-here'
 export GH_TOKEN='your-token-here'
 export OCTOPUS_SERVER_BASE64_LICENSE='your-base64-license-here'
+export GIT_SERVICE_TOKEN='your-token-here'
 vagrant up
 ```
 
@@ -51,8 +53,10 @@ The list itself is `OPTIONAL_HOST_CREDENTIALS` at the top of the `Vagrantfile`, 
 a variable name to it is all that is needed to expose that variable to the agents. The
 guest file name is derived from the name, and the provisioner that writes the file and
 both launchers that source it are generated from the same list, so a new entry is written
-to `/etc/<name>.env` on the next `vagrant up` and forwarded into the environment of every
-agent. The sandbox deny rules are not generated from it, which is the other half of the
+to `/etc/<name>.env` and forwarded into the environment of every agent on the next
+`vagrant provision` or `vagrant reload` (or `vagrant up` for a box that is not running).
+Agents already running keep the environment they started with; restart them to pick up
+the new variable. The sandbox deny rules are not generated from it, which is the other half of the
 point above: a credential added here is readable by commands the agent runs unless it is
 also denied in `/etc/claude-code/managed-settings.json`.
 

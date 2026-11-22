@@ -72,7 +72,7 @@ POSTGRES_PASSWORD = "claude"
 # because it is mandatory — without it there is no agent at all — whereas these are only
 # wanted by some of the tools the agent can reach, so a host that has not exported them
 # should still be able to bring the box up.
-OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY OCTOPUS_URL OCTOPUS_APIKEY GITHUB_PACKAGE_READ GH_TOKEN OCTOPUS_SERVER_BASE64_LICENSE].freeze
+OPTIONAL_HOST_CREDENTIALS = %w[AZURE_STORAGE_ACCOUNT_KEY OCTOPUS_API_KEY OCTOPUS_URL OCTOPUS_APIKEY GITHUB_PACKAGE_READ GH_TOKEN OCTOPUS_SERVER_BASE64_LICENSE GIT_SERVICE_TOKEN].freeze
 
 # One place to derive the file name from the variable name, so that the provisioner
 # writing the file, the launcher sourcing it, and the sandbox rule denying reads of it
@@ -316,6 +316,12 @@ Vagrant.configure("2") do |config|
     # runs always. Lines below are generated, so nothing appears here for a key the host
     # did not export.
 #{write_optional_credentials}#{report_stale_credentials}
+    # The launchers are written here too, rather than by the one-off provisioner below,
+    # because each has the OPTIONAL_HOST_CREDENTIALS list baked in. Rewriting them on
+    # every run means a name added to that list reaches the agents on the next
+    # `vagrant provision` or `vagrant reload`, without waiting on the long install
+    # script to rerun cleanly first.
+#{install_agent_launchers}
     # This is a dummy environment variable used by QWEN Code when running against
     # a local Ollama server.
     #
@@ -407,7 +413,6 @@ PROFILE
 
     install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 755 /etc/octopus #{AGENT_HOME}/.octopus
 
-#{install_agent_launchers}
     for skel in /etc/skel/.[!.]*; do
       [ -f "$skel" ] || continue
       install -o #{AGENT_USER} -g #{AGENT_USER} -m 644 \
