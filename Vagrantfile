@@ -383,10 +383,15 @@ PROFILE
     source: "~/.claude.json",
     destination: "/home/vagrant/claude.json.upload"
 
-  # Copy QWEN settings if they exist
+  # Copy QWEN settings if they exist. Run always, with the install in the
+  # qwen-settings-paths provisioner below, so an edit to the host file reaches the
+  # guest on every vagrant up, reload or provision, and on its own with
+  # `vagrant provision --provision-with qwen-settings-upload,qwen-settings-paths`.
   qwen_settings_source = File.join(HOST_HOME, ".qwen", "settings.json")
   if File.file?(qwen_settings_source)
-    config.vm.provision "file",
+    config.vm.provision "qwen-settings-upload",
+      type: "file",
+      run: "always",
       source: qwen_settings_source,
       destination: "/home/vagrant/qwen-settings.json.upload"
   end
@@ -422,14 +427,6 @@ PROFILE
     install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
       /home/vagrant/claude.json.upload #{AGENT_HOME}/.claude.json
     rm -f /home/vagrant/claude.json.upload
-
-    # Only copy qwen settings if they were uploaded from the host.
-    if [ -s /home/vagrant/qwen-settings.json.upload ]; then
-      install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 700 "#{AGENT_HOME}/.qwen"
-      install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
-        /home/vagrant/qwen-settings.json.upload "#{AGENT_HOME}/.qwen/settings.json"
-    fi
-    rm -f /home/vagrant/qwen-settings.json.upload
 
     mkdir -p /etc/claude-code
     chown root:root /etc/claude-code
@@ -963,6 +960,17 @@ PROFILE
     inline: <<-SHELL
 #!/bin/bash
     set -euo pipefail
+
+    # Replace the guest's settings with the copy just uploaded from the host, if there
+    # was one. Done ahead of the jq check so the copy still happens on a box whose main
+    # provisioner has not yet installed jq.
+    if [ -s /home/vagrant/qwen-settings.json.upload ]; then
+      install -d -o #{AGENT_USER} -g #{AGENT_USER} -m 700 "#{AGENT_HOME}/.qwen"
+      install -o #{AGENT_USER} -g #{AGENT_USER} -m 600 \
+        /home/vagrant/qwen-settings.json.upload "#{AGENT_HOME}/.qwen/settings.json"
+      echo "copied qwen settings from the host"
+    fi
+    rm -f /home/vagrant/qwen-settings.json.upload
 
     command -v jq >/dev/null || { echo "jq is not installed yet; run the main provisioner first"; exit 1; }
 
