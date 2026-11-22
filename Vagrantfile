@@ -759,6 +759,11 @@ PROFILE
     apt-get update -y
     apt-get install -y terraform tofu gh
 
+    # Octopus CLI, from Octopus Deploy's install script, which picks the amd64 or arm64
+    # release and installs the `octopus` binary to /usr/local/bin. Run as root, so it
+    # never stops to ask for sudo.
+    curl -fsSL https://github.com/OctopusDeploy/cli/raw/main/scripts/install.sh | bash
+
     # .NET SDK, from Microsoft's dotnet-install script rather than an apt repository:
     # packages.microsoft.com publishes the SDK for amd64 only, and Ubuntu's own feed
     # lags behind the current LTS, whereas the script fetches the matching build for
