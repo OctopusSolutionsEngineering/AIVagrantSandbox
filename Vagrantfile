@@ -60,6 +60,11 @@ PWSH_VERSION = "7.6.4"
 # version, so a reprovision picks up the latest patch of the same major release.
 DOTNET_CHANNEL = "10.0"
 
+# The Kubernetes minor release kubectl is installed from. pkgs.k8s.io publishes one apt
+# repository per minor release, so apt upgrades stay within it and pick up its patches;
+# bump this to move to the next one.
+KUBERNETES_MINOR = "1.37"
+
 # The password of the agent's PostgreSQL role, for applications that log in over TCP
 # rather than through the Unix socket. A fixed development default, not a secret: the
 # server only listens on localhost inside the guest, and the value is exported to every
@@ -756,8 +761,18 @@ PROFILE
     chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
 
+    # kubectl, from the Kubernetes project's apt repository for KUBERNETES_MINOR.
+    curl -fsSL "https://pkgs.k8s.io/core:/stable:/v#{KUBERNETES_MINOR}/deb/Release.key" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes.gpg
+    chmod go+r /etc/apt/keyrings/kubernetes.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v#{KUBERNETES_MINOR}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+
+    # Helm, from the Helm project's apt repository, which also publishes amd64 and arm64.
+    curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | gpg --batch --yes --dearmor -o /etc/apt/keyrings/helm.gpg
+    chmod go+r /etc/apt/keyrings/helm.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" > /etc/apt/sources.list.d/helm.list
+
     apt-get update -y
-    apt-get install -y terraform tofu gh
+    apt-get install -y terraform tofu gh kubectl helm
 
     # Octopus CLI, from Octopus Deploy's install script, which picks the amd64 or arm64
     # release and installs the `octopus` binary to /usr/local/bin. Run as root, so it
