@@ -7,10 +7,16 @@ $model = ''
 $reasoningEffort = ''
 $contextWindowSize = ''
 $ollamaHost = ''
+$disableExternalAccess = $false
 
 $i = 0
 while ($i -lt $args.Count) {
      $arg = [string] $args[$i]
+     if ($arg -eq '--disable-external-access') {
+         $disableExternalAccess = $true
+         $i += 1
+         continue
+     }
      if ($arg -eq '--model' -or $arg -eq '--reasoning-effort' -or $arg -eq '--ollama-host' -or $arg -eq '--context-window-size') {
          if ($i + 1 -ge $args.Count) {
              [Console]::Error.WriteLine("qwen.ps1: $arg needs a value")
@@ -23,7 +29,7 @@ while ($i -lt $args.Count) {
          $i += 2
      }
      else {
-         [Console]::Error.WriteLine("qwen.ps1: unknown argument: $arg (expected --model NAME, --reasoning-effort VALUE, --context-window-size INTEGER, or --ollama-host HOST)")
+         [Console]::Error.WriteLine("qwen.ps1: unknown argument: $arg (expected --model NAME, --reasoning-effort VALUE, --context-window-size INTEGER, --ollama-host HOST, or --disable-external-access)")
          exit 1
      }
 }
@@ -145,7 +151,44 @@ if ($model -ne '' -or $reasoningEffort -ne '' -or $contextWindowSize -ne '' -or 
 # no rebinding to 0.0.0.0 and no firewall hole, and the guest-side address stays the same
 # whatever the provider hands out for the host. Point the agent's baseUrl at
 # http://127.0.0.1:11434/v1.
-vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ" -- -t `
+# With --disable-external-access, the guest's firewall is told to refuse everything the
+# claude account sends anywhere but the loopback interface, for the length of the session.
+# Matching on the owner keeps sshd, and so this terminal and the -R/-L forwards (all
+# loopback traffic in the guest), working. See qwen.sh for the full reasoning.
+if ($disableExternalAccess) {
+    Write-Host 'External network access disabled for the agent (loopback and ssh only)'
+    $guestScript = @"
+chain=AGENT_NO_EXTERNAL
+uid=`$(id -u claude) || exit 1
+cleanup() {
+  for ipt in iptables ip6tables; do
+    command -v `$ipt >/dev/null 2>&1 || continue
+    while `$ipt -D OUTPUT -m owner --uid-owner `$uid -j `$chain 2>/dev/null; do :; done
+    `$ipt -F `$chain 2>/dev/null
+    `$ipt -X `$chain 2>/dev/null
+  done
+}
+cleanup
+trap cleanup EXIT
+for ipt in iptables ip6tables; do
+  command -v `$ipt >/dev/null 2>&1 || { echo "qwen.ps1: `$ipt is not installed in the guest" >&2; exit 1; }
+  `$ipt -N `$chain \
+    && `$ipt -A `$chain -o lo -j ACCEPT \
+    && `$ipt -A `$chain -j REJECT \
+    && `$ipt -I OUTPUT -m owner --uid-owner `$uid -j `$chain \
+    || { echo "qwen.ps1: could not install the `$ipt rules in the guest" >&2; exit 1; }
+done
+/usr/local/sbin/qwen-agent --dir $startRelQ
+"@
+    $guestScript = $guestScript.Replace("`r`n", "`n")
+    $guestScriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($guestScript))
+    $launchCmd = "exec sudo bash -c `"`$(echo $guestScriptB64 | base64 -d)`""
+}
+else {
+    $launchCmd = "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ"
+}
+
+vagrant ssh -c $launchCmd -- -t `
   -R 64342:127.0.0.1:64342 `
   -R 11434:127.0.0.1:11434 `
   -L 127.0.0.1:7777:127.0.0.1:7777 `

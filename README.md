@@ -112,6 +112,7 @@ Both scripts accept optional override arguments that update the agent's configur
 | `--reasoning-effort VALUE` | enum | Set reasoning effort: `none`, `low`, `medium`, `high`, or `max` |
 | `--context-window-size INTEGER` | integer | Override the context window size |
 | `--ollama-host HOST` | string | Override the Ollama server (default from settings.json) |
+| `--disable-external-access` | flag | Block the agent's network access except loopback (see below) |
 
 ```bash
 # Launch with a specific model and reasoning effort
@@ -120,6 +121,18 @@ Both scripts accept optional override arguments that update the agent's configur
 # Launch with a custom context window size and Ollama host
 ./qwen.ps1 --context-window-size 128000 --ollama-host 192.168.1.100
 ```
+
+## Disabling external access
+
+`--disable-external-access` adds guest firewall rules (iptables/ip6tables, matched on the
+`claude` user) that reject all of the agent's traffic except over the loopback interface, for
+the length of the session. SSH keeps working, as do all the forwarded ports (the `-R` ports
+and the `-L` port), because they are loopback traffic in the guest. The rules are removed when
+the session ends. If the rules cannot be installed, the agent is not started.
+
+Because only loopback is allowed, an `--ollama-host` pointing at another machine will be
+unreachable; leave Ollama on the host's localhost via the `11434` forward instead. Concurrent
+sessions share the rules, so the first one to exit lifts them for the others.
 
 Arguments are left alone when not passed, which is how the IDE typically calls these scripts.
 An unrecognized argument causes an error and non-zero exit.

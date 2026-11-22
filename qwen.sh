@@ -7,9 +7,14 @@ model=
 context_window_size=
 reasoning_effort=
 ollama_host=
+disable_external_access=0
 
 while [ $# -gt 0 ]; do
   case $1 in
+      --disable-external-access)
+         disable_external_access=1
+         shift
+          ;;
       --context-window-size | --model | --ollama-host | --reasoning-effort)
          [ $# -ge 2 ] || { echo "qwen.sh: $1 needs a value" >&2; exit 1; }
         case $1 in
@@ -21,7 +26,7 @@ while [ $# -gt 0 ]; do
          shift 2
           ;;
           *)
-         echo "qwen.sh: unknown argument: $1 (expected --context-window-size INTEGER, --model NAME, --reasoning-effort VALUE, or --ollama-host HOST)" >&2
+         echo "qwen.sh: unknown argument: $1 (expected --context-window-size INTEGER, --model NAME, --reasoning-effort VALUE, --ollama-host HOST, or --disable-external-access)" >&2
         exit 1
           ;;
   esac
@@ -124,7 +129,57 @@ fi
 # no rebinding to 0.0.0.0 and no firewall hole, and the guest-side address stays the same
 # whatever the provider hands out for the host. Point the agent's baseUrl at
 # http://127.0.0.1:11434/v1.
-vagrant ssh -c "exec sudo /usr/local/sbin/qwen-agent --dir $start_rel_q" -- -t \
+# With --disable-external-access, the guest's firewall is told to refuse everything the
+# claude account sends anywhere but the loopback interface, for the length of the session.
+#
+# Matching on the owner rather than on the interface as a whole is what keeps the rest
+# working: sshd and the launcher run as other accounts and are untouched, so the ssh
+# session carrying this terminal stays up. The -R forwards come out of sshd onto the
+# guest's loopback and the -L target is a loopback listener, so both are loopback traffic
+# and pass. The claude account has no sudo, so it cannot lift the rule itself.
+#
+# The rules are removed again on the way out, because rules left behind would silently
+# cap the next, ordinary launch. They are also cleared before being added, in case a
+# session that was killed outright left some. Two sessions at once share the rules, so
+# the first to finish lifts them for the other.
+#
+# Failing to install the rules aborts the launch: starting the agent with the network
+# open after being asked to close it is the one outcome this option must not have.
+#
+# The script is shipped base64-encoded so that neither shell has to re-parse it.
+if [ "$disable_external_access" = 1 ]; then
+  echo "External network access disabled for the agent (loopback and ssh only)"
+  guest_script=$(cat <<SCRIPT
+chain=AGENT_NO_EXTERNAL
+uid=\$(id -u claude) || exit 1
+cleanup() {
+  for ipt in iptables ip6tables; do
+    command -v \$ipt >/dev/null 2>&1 || continue
+    while \$ipt -D OUTPUT -m owner --uid-owner \$uid -j \$chain 2>/dev/null; do :; done
+    \$ipt -F \$chain 2>/dev/null
+    \$ipt -X \$chain 2>/dev/null
+  done
+}
+cleanup
+trap cleanup EXIT
+for ipt in iptables ip6tables; do
+  command -v \$ipt >/dev/null 2>&1 || { echo "qwen.sh: \$ipt is not installed in the guest" >&2; exit 1; }
+  \$ipt -N \$chain \\
+    && \$ipt -A \$chain -o lo -j ACCEPT \\
+    && \$ipt -A \$chain -j REJECT \\
+    && \$ipt -I OUTPUT -m owner --uid-owner \$uid -j \$chain \\
+    || { echo "qwen.sh: could not install the \$ipt rules in the guest" >&2; exit 1; }
+done
+/usr/local/sbin/qwen-agent --dir $start_rel_q
+SCRIPT
+)
+  guest_script_b64=$(printf '%s' "$guest_script" | base64 | tr -d '\n')
+  launch_cmd="exec sudo bash -c \"\$(echo $guest_script_b64 | base64 -d)\""
+else
+  launch_cmd="exec sudo /usr/local/sbin/qwen-agent --dir $start_rel_q"
+fi
+
+vagrant ssh -c "$launch_cmd" -- -t \
   -R 64342:127.0.0.1:64342 \
   -R 11434:127.0.0.1:11434 \
   -L 127.0.0.1:7777:127.0.0.1:7777 \
