@@ -65,13 +65,6 @@ DOTNET_CHANNEL = "10.0"
 # bump this to move to the next one.
 KUBERNETES_MINOR = "1.37"
 
-# The password of the agent's PostgreSQL role, for applications that log in over TCP
-# rather than through the Unix socket. A fixed development default, not a secret: the
-# server only listens on localhost inside the guest, and the value is exported to every
-# login shell. Change it here and reprovision to rotate it. It is pasted into a SQL
-# string inside a double-quoted shell argument, so keep it to letters and digits.
-POSTGRES_PASSWORD = "claude"
-
 # Credentials read from the host environment and pushed into the guest as root-owned
 # files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
 # because it is mandatory — without it there is no agent at all — whereas these are only
@@ -215,7 +208,7 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provider "parallels" do |prl|
-    prl.memory = 4096
+    prl.memory = 8192
     prl.cpus   = 6
     # Keep the guest clock synced to the host via Parallels Tools, so it doesn't drift
     # after the host sleeps or the VM is suspended (stale clocks break TLS and API auth).
@@ -223,17 +216,17 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provider "libvirt" do |lv|
-    lv.memory = 4096
+    lv.memory = 8192
     lv.cpus   = 6
   end
 
   config.vm.provider "virtualbox" do |vb|
-    vb.memory = 4096
+    vb.memory = 8192
     vb.cpus   = 6
   end
 
   config.vm.provider "hyperv" do |hv|
-    hv.maxmemory = 4096
+    hv.maxmemory = 8192
     hv.cpus   = 6
   end
 
@@ -456,8 +449,6 @@ PROFILE
     # (the plugin logs "listen unix ...: socket: operation not permitted"). Unix
     # sockets cannot be allowed by path on Linux, and sandbox.network.allowAllUnixSockets
     # would lift the block for every command, so only these two are excluded.
-    # `psql` is excluded for the same reason: by default it reaches the local
-    # PostgreSQL server through the Unix socket in /var/run/postgresql.
     cat > /etc/claude-code/managed-settings.json <<'JSON'
 {
   "permissions": {
@@ -504,8 +495,7 @@ PROFILE
     "excludedCommands": [
       "docker *",
       "terraform *",
-      "tofu *",
-      "psql *"
+      "tofu *"
     ],
     "allowManagedReadPathsOnly": true,
     "filesystem": {
@@ -693,36 +683,9 @@ MARKDOWN
       default-jdk \
       maven \
       groovy \
-      postgresql \
-      postgresql-client \
       ca-certificates \
       gnupg \
       lsb-release
-
-    # A PostgreSQL role for the agent, named after its Unix account so that peer
-    # authentication on the local socket lets `psql` in without a password. SUPERUSER
-    # gives it full access to every database on the server. No database of its own is
-    # created, so `psql` must be pointed at one, for example `psql -d postgres`.
-    systemctl enable --now postgresql
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_roles WHERE rolname = '#{AGENT_USER}'" | grep -q 1 \
-      || sudo -u postgres createuser --superuser #{AGENT_USER}
-
-    # The role's password is set on every provision, so changing POSTGRES_PASSWORD takes
-    # effect on the next one. Ubuntu's pg_hba.conf already accepts password logins over
-    # TCP from 127.0.0.1 and ::1, so applications connecting to localhost need nothing
-    # else. The PG* variables are the ones libpq reads, so psql, pg_dump and any driver
-    # built on libpq pick them up without being configured.
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE #{AGENT_USER} WITH PASSWORD '#{POSTGRES_PASSWORD}'"
-    cat > /etc/profile.d/postgres.sh <<'PROFILE'
-if [ "$(id -u)" = "#{AGENT_UID}" ]; then
-  export POSTGRES_USER=#{Shellwords.escape(AGENT_USER)}
-  export POSTGRES_PASSWORD=#{Shellwords.escape(POSTGRES_PASSWORD)}
-  export PGUSER="$POSTGRES_USER"
-  export PGPASSWORD="$POSTGRES_PASSWORD"
-fi
-PROFILE
-    chown root:root /etc/profile.d/postgres.sh
-    chmod 644 /etc/profile.d/postgres.sh
 
     # Download the installer bundle
     ARCH=$(uname -m)

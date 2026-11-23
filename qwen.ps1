@@ -153,8 +153,8 @@ if ($model -ne '' -or $reasoningEffort -ne '' -or $contextWindowSize -ne '' -or 
 # http://127.0.0.1:11434/v1.
 # With --disable-external-access, the guest's firewall is told to refuse every new outbound
 # connection except over loopback, for the length of the session. Only root and vagrant are
-# exempt: default-deny rather than an owner-match on claude, because claude is a Postgres
-# superuser and COPY ... FROM PROGRAM would run curl as the postgres account. SSH and the
+# exempt: default-deny rather than an owner-match on claude, so work the agent gets another
+# account to do on its behalf is blocked too. SSH and the
 # -R/-L forwards keep working (established traffic, sshd as root, loopback). See qwen.sh.
 if ($disableExternalAccess) {
     Write-Host 'External network access disabled for the agent (loopback and ssh only)'

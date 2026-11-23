@@ -134,10 +134,9 @@ fi
 # root and vagrant accounts are exempt, so a new account (or a service the agent can drive)
 # is blocked by default rather than needing to be listed.
 #
-# It is deliberately not an owner-match on the claude account alone: claude is a Postgres
-# superuser, so `COPY ... FROM PROGRAM` would run curl as the postgres account and walk
-# straight past such a rule. Default-deny closes that, and the same goes for DNS via
-# systemd-resolved.
+# It is deliberately not an owner-match on the claude account alone: anything the agent can
+# get another account to run on its behalf would walk straight past such a rule.
+# Default-deny closes that, and the same goes for DNS via systemd-resolved.
 #
 # What keeps the session working: established/related traffic is accepted, which covers the
 # replies on the ssh connection carrying this terminal; sshd runs as root; the -R forwards
