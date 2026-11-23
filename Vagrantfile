@@ -91,7 +91,11 @@ end
 #
 # `required_credentials` are sourced unconditionally and their absence is fatal;
 # `optional_credentials` are forwarded when present and passed over when not.
-def agent_launcher(name:, command:, required_credentials: [], optional_credentials: [])
+#
+# `fixed_env` is plain NAME=value settings, not secrets, that are always set for the agent.
+# They go through the same `env` call as the credentials, so they are in place before the
+# agent's login shell starts (a profile script that exports the same name would override them).
+def agent_launcher(name:, command:, required_credentials: [], optional_credentials: [], fixed_env: {})
   required = required_credentials.map { |var, file|
     ". #{file}\nagent_env+=(#{var}=\"$#{var}\")\n"
   }.join
@@ -126,7 +130,7 @@ def agent_launcher(name:, command:, required_credentials: [], optional_credentia
     # Credentials are read here and nowhere else. Their files are root-owned and mode 600,
     # and this launcher is the last thing to run as root before the drop to the agent
     # account, so this is the only point at which they can be picked up at all.
-    agent_env=()
+    agent_env=(#{fixed_env.map { |var, value| Shellwords.escape("#{var}=#{value}") }.join(" ")})
 
     #{credentials}
 
@@ -288,6 +292,7 @@ Vagrant.configure("2") do |config|
     "qwen-agent" => agent_launcher(
       name: "qwen-agent",
       command: "#{AGENT_HOME}/.local/bin/qwen",
+      fixed_env: { "QWEN_TELEMETRY_ENABLED" => "false" },
       optional_credentials: optional_credential_pairs,
     ),
   }
