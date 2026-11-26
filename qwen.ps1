@@ -200,10 +200,17 @@ else {
     $launchCmd = "exec sudo /usr/local/sbin/qwen-agent --dir $startRelQ"
 }
 
+# Port forwards for the session. -R makes a service on the host reachable from the guest's
+# loopback; -L does the reverse. The ports are:
+#   64342        the IDE's MCP server (IntelliJ IDEA)
+#   11434        Ollama
+#   10000-10002  Azurite (blob, queue and table storage)
+#   8080         Strata
+#   8083         forwarded -L, so the host can reach Octopus running in the guest
 vagrant ssh -c $launchCmd -- -t `
   -R 64342:127.0.0.1:64342 `
   -R 11434:127.0.0.1:11434 `
-  -L 127.0.0.1:7777:127.0.0.1:7777 `
+  -L 127.0.0.1:8083:127.0.0.1:8083 `
   -R 10000:127.0.0.1:10000 `
   -R 10001:127.0.0.1:10001 `
   -R 10002:127.0.0.1:10002 `
