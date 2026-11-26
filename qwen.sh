@@ -202,9 +202,11 @@ fi
 #   11434        Ollama
 #   10000-10002  Azurite (blob, queue and table storage)
 #   8080         Strata
+#   8081         forwarded -L, so the host can reach Octopus running in the guest
 vagrant ssh -c "$launch_cmd" -- -t \
   -R 64342:127.0.0.1:64342 \
   -R 11434:127.0.0.1:11434 \
+  -L 127.0.0.1:8081:127.0.0.1:8081 \
   -R 10000:127.0.0.1:10000 \
   -R 10001:127.0.0.1:10001 \
   -R 10002:127.0.0.1:10002 \
