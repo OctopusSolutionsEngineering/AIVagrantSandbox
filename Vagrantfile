@@ -65,6 +65,15 @@ DOTNET_CHANNEL = "10.0"
 # bump this to move to the next one.
 KUBERNETES_MINOR = "1.37"
 
+# Pinned for the same reason as PWSH_VERSION: kind ships as a bare binary from GitHub
+# releases rather than an apt repository, so the version is fixed and the download is
+# checked against the sha256 published beside it. Bump this to upgrade.
+KIND_VERSION = "v0.33.0"
+
+# The Argo CD CLI, pinned and checksum-verified like kind: it is a bare binary on GitHub
+# releases. The release publishes all its digests in one cli_checksums.txt. Bump to upgrade.
+ARGOCD_VERSION = "v3.6.3"
+
 # Credentials read from the host environment and pushed into the guest as root-owned
 # files under /etc, one per variable. ANTHROPIC_API_KEY is handled on its own below
 # because it is mandatory — without it there is no agent at all — whereas these are only
@@ -764,6 +773,38 @@ MARKDOWN
       > /etc/apt/sources.list.d/docker.list
     apt-get update -y
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-ce-rootless-extras
+
+    # AWS Emulator, from AWS's Debian package for the guest's instruction set. It installs
+    # to /opt/aws-emulator and puts `aws-emulator` on PATH; it serves HTTPS on
+    # 127.0.0.1:9297 once started. AWS only publishes "latest" of the LTS line, so this is
+    # not pinned. Telemetry is on by default upstream, so it is switched off for every
+    # login shell here.
+    curl -fsSLo /tmp/aws-emulator.deb "https://downloads.aws.com/aws-emulator/packages/aws-emulator/LTS/latest/aws-emulator_$(dpkg --print-architecture).deb"
+    apt-get install -y /tmp/aws-emulator.deb
+    rm -f /tmp/aws-emulator.deb
+    echo 'export EMULATOR_TELEMETRY=off' > /etc/profile.d/aws-emulator.sh
+    chown root:root /etc/profile.d/aws-emulator.sh
+    chmod 644 /etc/profile.d/aws-emulator.sh
+
+    # Argo CD CLI, for the guest's instruction set, verified against the release's
+    # published digests (only the line for the file actually downloaded is checked).
+    ARGOCD_ARCH=$(dpkg --print-architecture)
+    mkdir -p /tmp/argocd-download
+    curl -fsSL -o /tmp/argocd-download/argocd-linux-${ARGOCD_ARCH} "https://github.com/argoproj/argo-cd/releases/download/#{ARGOCD_VERSION}/argocd-linux-${ARGOCD_ARCH}"
+    curl -fsSL -o /tmp/argocd-download/cli_checksums.txt "https://github.com/argoproj/argo-cd/releases/download/#{ARGOCD_VERSION}/cli_checksums.txt"
+    (cd /tmp/argocd-download && grep " argocd-linux-${ARGOCD_ARCH}\\$" cli_checksums.txt | sha256sum -c -)
+    install -m 0755 /tmp/argocd-download/argocd-linux-${ARGOCD_ARCH} /usr/local/bin/argocd
+    rm -rf /tmp/argocd-download
+
+    # kind, for local Kubernetes clusters running on the rootless Docker set up below.
+    # Fetched for the guest's own instruction set and verified against the published digest.
+    KIND_ARCH=$(dpkg --print-architecture)
+    mkdir -p /tmp/kind-download
+    curl -fsSL -o /tmp/kind-download/kind-linux-${KIND_ARCH} "https://github.com/kubernetes-sigs/kind/releases/download/#{KIND_VERSION}/kind-linux-${KIND_ARCH}"
+    curl -fsSL -o /tmp/kind-download/kind.sha256sum "https://github.com/kubernetes-sigs/kind/releases/download/#{KIND_VERSION}/kind-linux-${KIND_ARCH}.sha256sum"
+    (cd /tmp/kind-download && sha256sum -c kind.sha256sum)
+    install -m 0755 /tmp/kind-download/kind-linux-${KIND_ARCH} /usr/local/bin/kind
+    rm -rf /tmp/kind-download
 
     systemctl disable --now docker.service docker.socket containerd.service || true
     systemctl mask docker.service docker.socket
