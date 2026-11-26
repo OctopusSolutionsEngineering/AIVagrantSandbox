@@ -320,6 +320,27 @@ Vagrant.configure("2") do |config|
     inline: <<-SHELL
 #!/bin/bash
     set -euo pipefail
+
+    # Close the way from the agent to the `vagrant` account. The box ships that account with
+    # the well-known password "vagrant", the stock sshd accepts passwords, and `vagrant` has
+    # passwordless sudo and is exempt from the --disable-external-access rules, so an agent
+    # that ran `ssh vagrant@127.0.0.1` with the default password became root. Vagrant itself
+    # only ever authenticates with a key, so none of this affects `vagrant ssh`.
+    #  - lock the password, and give sshd no way to accept one (a 00- drop-in is read first,
+    #    and the first value sshd sees wins, so it beats cloud-init's 50- file);
+    #  - make the account's home and the sudoers grant unreadable to the agent. sshd's
+    #    StrictModes already insists on a private ~/.ssh.
+    passwd -l vagrant
+    cat > /etc/ssh/sshd_config.d/00-no-password-auth.conf <<'SSHD'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+SSHD
+    chmod 644 /etc/ssh/sshd_config.d/00-no-password-auth.conf
+    sshd -t
+    systemctl reload ssh
+    chmod 750 /home/vagrant
+    chmod 440 /etc/sudoers.d/vagrant
+
     install -o root -g root -m 600 /dev/null /etc/anthropic_api_key.env
     echo "export ANTHROPIC_API_KEY='#{anthropic_api_key}'" > /etc/anthropic_api_key.env
 
