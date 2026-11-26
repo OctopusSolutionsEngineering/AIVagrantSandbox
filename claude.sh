@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export VAGRANT_DOTFILE_PATH="${VAGRANT_DOTFILE_PATH:-$HOME/.vagrant-dots/aivagrantsandbox}"
+
 # The working directory is set to the project currently open in the IDE.
 echo "Host project directory: $PWD"
 

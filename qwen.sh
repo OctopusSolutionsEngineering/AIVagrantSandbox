@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export VAGRANT_DOTFILE_PATH="${VAGRANT_DOTFILE_PATH:-$HOME/.vagrant-dots/aivagrantsandbox}"
+
 # Optional overrides for the model, the reasoning effort, the context window size,
 # and the Ollama server, applied to the settings file in the guest below.
 # All are left alone when not passed, which is how the IDE calls this.

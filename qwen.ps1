@@ -1,5 +1,7 @@
 #!/usr/bin/env pwsh
 
+if (-not $env:VAGRANT_DOTFILE_PATH) { $env:VAGRANT_DOTFILE_PATH = Join-Path $HOME '.vagrant-dots/aivagrantsandbox' }
+
 # Optional overrides for the model, the reasoning effort, and the Ollama server,
 # applied to the settings file in the guest below. All are left alone when not
 # passed, which is how the IDE calls this.

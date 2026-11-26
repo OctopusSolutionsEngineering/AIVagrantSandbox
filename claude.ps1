@@ -1,5 +1,7 @@
 #!/usr/bin/env pwsh
 
+if (-not $env:VAGRANT_DOTFILE_PATH) { $env:VAGRANT_DOTFILE_PATH = Join-Path $HOME '.vagrant-dots/aivagrantsandbox' }
+
 # The working directory is set to the project currently open in the IDE.
 Write-Host "Host project directory: $PWD"
 
