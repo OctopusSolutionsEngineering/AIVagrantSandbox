@@ -162,12 +162,16 @@ if ($disableExternalAccess) {
     Write-Host 'External network access disabled for the agent (loopback and ssh only)'
     $guestScript = @"
 chain=AGENT_NO_EXTERNAL
+fwdchain=AGENT_NO_EXTERNAL_FWD
 cleanup() {
   for ipt in iptables ip6tables; do
     command -v `$ipt >/dev/null 2>&1 || continue
     while `$ipt -D OUTPUT -j `$chain 2>/dev/null; do :; done
+    while `$ipt -D FORWARD -j `$fwdchain 2>/dev/null; do :; done
     `$ipt -F `$chain 2>/dev/null
     `$ipt -X `$chain 2>/dev/null
+    `$ipt -F `$fwdchain 2>/dev/null
+    `$ipt -X `$fwdchain 2>/dev/null
   done
 }
 cleanup
@@ -181,6 +185,9 @@ for ipt in iptables ip6tables; do
     && `$ipt -A `$chain -m owner --uid-owner vagrant -j ACCEPT \
     && `$ipt -A `$chain -j REJECT \
     && `$ipt -I OUTPUT -j `$chain \
+    && `$ipt -N `$fwdchain \
+    && `$ipt -A `$fwdchain -j REJECT \
+    && `$ipt -I FORWARD -j `$fwdchain \
     || { echo "qwen.ps1: could not install the `$ipt rules in the guest" >&2; exit 1; }
 done
 /usr/local/sbin/qwen-agent --dir $startRelQ
