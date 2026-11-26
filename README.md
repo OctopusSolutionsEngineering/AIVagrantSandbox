@@ -2,6 +2,23 @@ An example AI agent sandbox built with Vagrant.
 
 [Sandboxing local AI Agents](https://octopus.com/blog/local-ai-agent-sandboxes)
 
+# Vagrant state directory
+
+`VAGRANT_DOTFILE_PATH` must be defined before running `vagrant up`, so Vagrant keeps the
+box's state in a fixed place. The `claude.sh`, `qwen.sh`, `claude.ps1` and `qwen.ps1`
+launchers default it to the value below if it is unset, but they cannot help `vagrant up`
+run by hand, so set it yourself in that shell:
+
+```bash
+export VAGRANT_DOTFILE_PATH="$HOME/.vagrant-dots/aivagrantsandbox"
+```
+
+In PowerShell:
+
+```powershell
+$env:VAGRANT_DOTFILE_PATH = Join-Path $HOME '.vagrant-dots/aivagrantsandbox'
+```
+
 # Host environment variables
 
 Credentials are read from the environment of the shell that runs `vagrant up` and written
