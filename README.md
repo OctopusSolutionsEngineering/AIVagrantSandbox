@@ -148,6 +148,13 @@ get around it. SSH keeps working, as do all the forwarded ports (the `-R` ports
 and the `-L` port), because they are loopback traffic in the guest. The rules are removed when
 the session ends. DHCP lease renewal is blocked while they are in place. If the rules cannot be installed, the agent is not started.
 
+The rules also cover forwarded traffic. Containers started by the agent's rootless Docker
+(and so kind clusters) run in a nested network namespace, and their traffic can reach the
+guest's FORWARD chain rather than OUTPUT, where the per-account rules above do not apply.
+A second chain, `AGENT_NO_EXTERNAL_FWD`, is attached to FORWARD and rejects everything.
+Nothing the guest needs while external access is off is forwarded, since the `-R`/`-L` ports
+go through sshd over loopback. The chain is installed and removed together with the rest.
+
 Because only loopback is allowed, an `--ollama-host` pointing at another machine will be
 unreachable; leave Ollama on the host's localhost via the `11434` forward instead. Concurrent
 sessions share the rules, so the first one to exit lifts them for the others.
