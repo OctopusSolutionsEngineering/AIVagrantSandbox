@@ -39,6 +39,7 @@ into the guest as root-owned files under `/etc`, refreshed on every boot.
 | `MAILTRAP_PASSWORD` | no | `/etc/mailtrap_password.env` |
 | `DOCKER_HUB_TOKEN` | no | `/etc/docker_hub_token.env` |
 | `DOCKER_HUB_USERNAME` | no | `/etc/docker_hub_username.env` |
+| `OCTOPUS_CLI_SERVER` | no | `/etc/octopus_cli_server.env` |
 
 ```bash
 export ANTHROPIC_API_KEY='your-key-here'
@@ -54,6 +55,7 @@ export MAILTRAP_USERNAME='your-username-here'
 export MAILTRAP_PASSWORD='your-password-here'
 export DOCKER_HUB_TOKEN='your-token-here'
 export DOCKER_HUB_USERNAME='your-username-here'
+export OCTOPUS_CLI_SERVER='https://your-instance.octopus.app'
 vagrant up
 ```
 
