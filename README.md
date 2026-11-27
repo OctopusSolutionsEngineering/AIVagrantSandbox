@@ -38,6 +38,7 @@ into the guest as root-owned files under `/etc`, refreshed on every boot.
 | `MAILTRAP_USERNAME` | no | `/etc/mailtrap_username.env` |
 | `MAILTRAP_PASSWORD` | no | `/etc/mailtrap_password.env` |
 | `DOCKER_HUB_TOKEN` | no | `/etc/docker_hub_token.env` |
+| `DOCKER_HUB_USERNAME` | no | `/etc/docker_hub_username.env` |
 
 ```bash
 export ANTHROPIC_API_KEY='your-key-here'
@@ -52,6 +53,7 @@ export GIT_SERVICE_TOKEN='your-token-here'
 export MAILTRAP_USERNAME='your-username-here'
 export MAILTRAP_PASSWORD='your-password-here'
 export DOCKER_HUB_TOKEN='your-token-here'
+export DOCKER_HUB_USERNAME='your-username-here'
 vagrant up
 ```
 
